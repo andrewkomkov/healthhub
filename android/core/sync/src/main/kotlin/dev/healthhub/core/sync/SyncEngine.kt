@@ -16,6 +16,7 @@ import dev.healthhub.core.model.ZoneKind
 import dev.healthhub.core.network.ActivityUploadRequest
 import dev.healthhub.core.network.CursorDto
 import dev.healthhub.core.network.HealthHubApi
+import dev.healthhub.core.network.SeenSource
 import dev.healthhub.core.network.SplitDto
 import dev.healthhub.core.network.SyncFailureDto
 import dev.healthhub.core.network.SyncReportRequest
@@ -120,9 +121,21 @@ class SyncEngine @Inject constructor(
          * turns that into eight calls per window regardless of how many sessions it holds,
          * while keeping only one window's samples in memory at a time.
          */
+        // Report every app seen writing data, so the athlete can rank them, then apply the
+        // ranking they have already set. Discovery and preference are separate: a source
+        // appearing for the first time must not disturb an order chosen deliberately.
+        val observed = sessions.map { it.metadata.dataOrigin.packageName }.distinct()
+        runCatching { api.reportSources(observed.map { SeenSource(packageName = it) }) }
+
+        val preferences = runCatching { api.sources() }.getOrDefault(emptyList())
+
         // One workout recorded by several apps is decided here, where every candidate is
         // in memory, and shipped as a verdict the edge simply stores.
-        val verdicts = SessionGrouping.classify(sessions)
+        val verdicts = SessionGrouping.classify(
+            sessions = sessions,
+            sourcePriority = preferences.associate { it.packageName to it.priority },
+            disabledSources = preferences.filterNot { it.enabled }.map { it.packageName }.toSet(),
+        )
 
         val windows = sessions
             .sortedBy { it.startTime }
@@ -254,18 +267,43 @@ class SyncEngine @Inject constructor(
         // independent of any GPS track. Indoor workouts and any session recorded without the
         // route permission have exactly these and nothing else — deriving distance only from
         // GPS would report a treadmill run as zero kilometres, which is worse than useless.
-        val recordedDistanceM = window.distance
-            .filter { overlaps(it.startTime, it.endTime) }
-            .sumOf { it.distance.inMeters }
-            .takeIf { it > 0 }
-        val recordedCaloriesKcal = window.calories
-            .filter { overlaps(it.startTime, it.endTime) }
-            .sumOf { it.energy.inKilocalories }
-            .takeIf { it > 0 }
-        val recordedElevationGainM = window.elevation
-            .filter { overlaps(it.startTime, it.endTime) }
-            .sumOf { it.elevation.inMeters }
-            .takeIf { it != 0.0 }
+        /*
+         * Aggregates are summed **per source, then one source is chosen** — never summed
+         * across sources.
+         *
+         * Health Connect is a hub: a ride recorded by both a bike computer's app and Google
+         * Fit produces two independent sets of DistanceRecords covering the same minutes.
+         * Adding them up reported an 89.59 km ride that was really ~42 km, and the giveaway
+         * was that the distance disagreed with the average speed over the elapsed time.
+         *
+         * The session's own source wins when it has records, because that is the app the
+         * athlete actually recorded with; otherwise the largest single source is used, since
+         * a partial recorder should not shrink a complete one.
+         */
+        val sessionOrigin = session.metadata.dataOrigin.packageName
+
+        fun pickPerSource(values: List<Pair<String, Double>>): Double? {
+            if (values.isEmpty()) return null
+            val bySource = values.groupBy({ it.first }, { it.second })
+                .mapValues { (_, amounts) -> amounts.sum() }
+            return (bySource[sessionOrigin] ?: bySource.values.maxOrNull())?.takeIf { it != 0.0 }
+        }
+
+        val recordedDistanceM = pickPerSource(
+            window.distance
+                .filter { overlaps(it.startTime, it.endTime) }
+                .map { it.metadata.dataOrigin.packageName to it.distance.inMeters },
+        )
+        val recordedCaloriesKcal = pickPerSource(
+            window.calories
+                .filter { overlaps(it.startTime, it.endTime) }
+                .map { it.metadata.dataOrigin.packageName to it.energy.inKilocalories },
+        )
+        val recordedElevationGainM = pickPerSource(
+            window.elevation
+                .filter { overlaps(it.startTime, it.endTime) }
+                .map { it.metadata.dataOrigin.packageName to it.elevation.inMeters },
+        )
 
         val gpsDistanceM = cumulative?.lastOrNull()?.takeIf { it > 0 }
         // The GPS track is the more precise measurement when it exists; the recorded
@@ -462,6 +500,17 @@ class SyncEngine @Inject constructor(
 
     private suspend fun lastSyncedUntil(): Instant? =
         staging.state(CURSOR_KEY)?.syncedUntil?.let(Instant::ofEpochMilli)
+
+    /**
+     * Drops everything tied to the previously signed-in account.
+     *
+     * The sync cursor is per account: keeping it means the next account's first sync starts
+     * from "now" and imports nothing, which presents as a sync button that does nothing.
+     */
+    suspend fun resetForNewAccount() {
+        staging.clearState()
+        staging.clearCache()
+    }
 
     private suspend fun recordCursor(until: Instant) {
         staging.putState(

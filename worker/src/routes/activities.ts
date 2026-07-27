@@ -10,6 +10,7 @@ import {
   int,
   jsonBody,
   num,
+  oneOf,
   optionalInt,
   optionalNum,
   optionalStr,
@@ -18,7 +19,8 @@ import {
 
 const FEED_COLUMNS = `id, sport, title, start_time, tz_offset_minutes, elapsed_seconds,
   moving_seconds, distance_m, elevation_gain_m, avg_speed_mps, avg_hr_bpm, has_gps,
-  route_polyline, bounds_json, source_package, source_count`
+  route_polyline, bounds_json, source_package, source_count, visibility,
+  archived_reason, visibility_locked`
 
 interface FeedRow {
   id: string
@@ -37,6 +39,9 @@ interface FeedRow {
   bounds_json: string | null
   source_package: string | null
   source_count: number | null
+  visibility: string
+  archived_reason: string | null
+  visibility_locked: number
 }
 
 const feedItem = (row: FeedRow) => ({
@@ -56,6 +61,9 @@ const feedItem = (row: FeedRow) => ({
   bounds: row.bounds_json ? (JSON.parse(row.bounds_json) as number[]) : null,
   sourcePackage: row.source_package,
   sourceCount: row.source_count ?? 1,
+  visibility: row.visibility,
+  archivedReason: row.archived_reason,
+  visibilityLocked: row.visibility_locked === 1,
 })
 
 /** Keyset cursors are opaque to the client but are just `startTime:id`. */
@@ -120,8 +128,8 @@ export const activityRoutes = new Hono<AppEnv>()
          avg_speed_mps, max_speed_mps, avg_hr_bpm, max_hr_bpm, avg_cadence_rpm,
          avg_power_w, max_power_w, has_gps, route_polyline, bounds_json,
          sample_count, channels_json, source_package, duplicate_of, source_count,
-         created_at, updated_at
-       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         visibility, archived_reason, created_at, updated_at
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (user_id, source_uid) DO UPDATE SET
          sport = excluded.sport,
          title = excluded.title,
@@ -150,6 +158,12 @@ export const activityRoutes = new Hono<AppEnv>()
          source_package = excluded.source_package,
          duplicate_of = excluded.duplicate_of,
          source_count = excluded.source_count,
+         -- A manual choice outranks the automatic one permanently: without this guard the
+         -- next sync silently undoes what the athlete just did.
+         visibility = CASE WHEN activities.visibility_locked = 1
+                           THEN activities.visibility ELSE excluded.visibility END,
+         archived_reason = CASE WHEN activities.visibility_locked = 1
+                                THEN activities.archived_reason ELSE excluded.archived_reason END,
          deleted_at = NULL,
          updated_at = excluded.updated_at`,
     )
@@ -185,6 +199,8 @@ export const activityRoutes = new Hono<AppEnv>()
         optionalStr(body, 'sourcePackage', { max: 200 }),
         optionalStr(body, 'duplicateOf', { max: 200 }),
         optionalInt(body, 'sourceCount') ?? 1,
+        body['duplicateOf'] ? 'archived' : 'active',
+        body['duplicateOf'] ? 'duplicate' : null,
         now,
         now,
       )
@@ -208,8 +224,11 @@ export const activityRoutes = new Hono<AppEnv>()
     const cursor = c.req.query('cursor')
 
     const where: string[] = ['user_id = ?', 'deleted_at IS NULL']
-    // One ride recorded by three apps is one row in the feed, not three.
-    if (c.req.query('includeDuplicates') !== '1') where.push('duplicate_of IS NULL')
+    // One ride recorded by three apps is one row in the feed; the others are archived,
+    // not deleted, and the athlete can open the archive and restore any of them.
+    const view = c.req.query('view')
+    if (view === 'archive') where.push("visibility = 'archived'")
+    else if (view !== 'all') where.push("visibility = 'active'")
     const binds: (string | number)[] = [userId]
 
     if (sport) {
@@ -323,6 +342,26 @@ export const activityRoutes = new Hono<AppEnv>()
     const body = await jsonBody(c.req.raw)
     const title = optionalStr(body, 'title', { max: 200 })
     const description = optionalStr(body, 'description', { max: 4000 })
+    const visibility =
+      body['visibility'] === undefined
+        ? null
+        : oneOf(body, 'visibility', ['active', 'archived'] as const)
+
+    if (visibility !== null) {
+      // Locking is the point: an athlete who restores a workout expects it to stay restored.
+      await c.env.DB.prepare(
+        `UPDATE activities SET visibility = ?, archived_reason = ?, visibility_locked = 1,
+             archived_at = ?, updated_at = ? WHERE id = ?`,
+      )
+        .bind(
+          visibility,
+          visibility === 'archived' ? 'manual' : null,
+          visibility === 'archived' ? Date.now() : null,
+          Date.now(),
+          id,
+        )
+        .run()
+    }
 
     if (title !== null) {
       await c.env.DB.prepare('UPDATE activities SET title = ?, updated_at = ? WHERE id = ?')

@@ -10,6 +10,7 @@ import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import dev.healthhub.core.designsystem.DynamicColors
 import dev.healthhub.core.devcontrol.DevCommand
+import dev.healthhub.core.database.StagingDao
 import dev.healthhub.core.devcontrol.DevReporter
 import dev.healthhub.core.healthconnect.HealthConnectSource
 import dev.healthhub.core.network.HealthHubApi
@@ -67,12 +68,20 @@ class LoginCommand @Inject constructor(
     }
 }
 
-class LogoutCommand @Inject constructor(private val tokens: TokenStore) : DevCommand {
+class LogoutCommand @Inject constructor(
+    private val tokens: TokenStore,
+    private val staging: StagingDao,
+) : DevCommand {
     override val name = "logout"
-    override val usage = "— forget the device token and session"
+    override val usage = "— forget the device token, cached feed and sync position"
 
     override suspend fun run(args: Map<String, String>): Map<String, String> {
         tokens.clearAll()
+        // The sync cursor belongs to the account that was signed in. Leaving it behind makes
+        // the next account's first sync read from "now" and find nothing — which looks
+        // exactly like a broken sync button.
+        staging.clearState()
+        staging.clearCache()
         return mapOf("cleared" to "true")
     }
 }

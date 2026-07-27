@@ -20,4 +20,11 @@ class HealthHubApplication : Application(), Configuration.Provider {
         get() = Configuration.Builder()
             .setWorkerFactory(workerFactory)
             .build()
+
+    override fun onCreate() {
+        super.onCreate()
+        // feature:auth builds the Auth0 URL for the browser hand-off and cannot read :app's
+        // BuildConfig, so the deployment address is handed to it once at startup.
+        dev.healthhub.feature.auth.BuildConfigBridge.baseUrl = BuildConfig.BASE_URL
+    }
 }

@@ -118,6 +118,16 @@ class HealthHubApi @Inject constructor(
         post("/api/sync/reports", report).close()
     }
 
+    /* ----------------------------------------------------------------- sources */
+
+    /** The athlete's trust order for the apps writing into Health Connect. */
+    suspend fun sources(): List<SourceDto> = get("/api/sources").decode<SourcesEnvelope>().sources
+
+    /** Reports the packages this sync saw, so they can be ordered in the app. */
+    suspend fun reportSources(packages: List<SeenSource>) {
+        post("/api/sources/seen", SeenSourcesRequest(packages)).close()
+    }
+
     /* ------------------------------------------------------------------- theme */
 
     /** Uploads this phone's Material You palette so the web client can wear it too. */

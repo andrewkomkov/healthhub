@@ -4,6 +4,7 @@ import { notFound, onError } from './lib/errors'
 import { authRoutes } from './routes/auth'
 import { activityRoutes } from './routes/activities'
 import { deviceRoutes } from './routes/devices'
+import { sourceRoutes } from './routes/sources'
 import { syncRoutes } from './routes/sync'
 import { telemetryRoutes } from './routes/telemetry'
 import { themeRoutes } from './routes/theme'
@@ -42,6 +43,7 @@ app.route('/api/devices', deviceRoutes)
 app.route('/api/activities', activityRoutes)
 app.route('/api/activities', telemetryRoutes)
 app.route('/api/sync', syncRoutes)
+app.route('/api/sources', sourceRoutes)
 app.route('/api/theme', themeRoutes)
 
 app.notFound(notFound)

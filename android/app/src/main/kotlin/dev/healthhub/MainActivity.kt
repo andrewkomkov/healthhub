@@ -45,6 +45,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        // A sign-in that started in the browser lands here before anything is drawn.
+        consumeAuthCallback(intent)
+
         setContent {
             HealthHubTheme {
                 AppRoot(
@@ -54,9 +57,31 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Destination.Auth
                     },
+                    onAuthCallback = ::consumeAuthCallback,
                 )
             }
         }
+    }
+
+    /**
+     * Completes an Auth0 sign-in.
+     *
+     * The Worker finishes the flow by redirecting to
+     * `healthhub://auth/callback?token=…&device=…`, which is how the device token reaches the
+     * app without the browser ever showing it and without this app handling the athlete's
+     * password or the client secret.
+     */
+    private fun consumeAuthCallback(intent: Intent?): Boolean {
+        val data = intent?.data ?: return false
+        if (data.scheme != "healthhub" || data.host != "auth") return false
+
+        val token = data.getQueryParameter("token") ?: return false
+        val deviceId = data.getQueryParameter("device") ?: return false
+        tokens.saveDeviceToken(token, deviceId)
+
+        // Clear it so a configuration change cannot replay the credential out of the intent.
+        intent.data = null
+        return true
     }
 }
 
@@ -64,6 +89,7 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(
     contributions: Set<NavContribution>,
     startDestination: Destination,
+    onAuthCallback: (Intent?) -> Boolean,
 ) {
     val controller = rememberNavController()
     val navigator = remember(controller) { NavHostNavigator(controller) }
@@ -77,7 +103,18 @@ private fun AppRoot(
      * ADB navigation surface (Principle VIII).
      */
     DisposableEffect(activity, controller) {
-        val listener = Consumer<Intent> { intent -> controller.handleDeepLink(intent) }
+        val listener = Consumer<Intent> { intent ->
+            // The auth callback carries a credential rather than a destination, so it is
+            // consumed here instead of being routed like an ordinary deep link.
+            if (onAuthCallback(intent)) {
+                controller.navigate(Destination.Feed.route) {
+                    popUpTo(controller.graph.id) { inclusive = true }
+                    launchSingleTop = true
+                }
+            } else {
+                controller.handleDeepLink(intent)
+            }
+        }
         (activity as? ComponentActivity)?.addOnNewIntentListener(listener)
         onDispose { (activity as? ComponentActivity)?.removeOnNewIntentListener(listener) }
     }

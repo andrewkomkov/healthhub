@@ -172,3 +172,21 @@ data class ApiErrorBody(@SerialName("error") val error: ApiErrorDetail)
 
 @Serializable
 data class ApiErrorDetail(val code: String, val message: String)
+
+@Serializable
+data class SourceDto(
+    val packageName: String,
+    val priority: Int = 100,
+    val enabled: Boolean = true,
+    val label: String? = null,
+    val activityCount: Int = 0,
+)
+
+@Serializable
+data class SourcesEnvelope(val sources: List<SourceDto>)
+
+@Serializable
+data class SeenSource(val packageName: String, val label: String? = null)
+
+@Serializable
+data class SeenSourcesRequest(val packages: List<SeenSource>)

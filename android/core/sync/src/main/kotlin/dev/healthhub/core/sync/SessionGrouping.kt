@@ -34,7 +34,13 @@ object SessionGrouping {
     )
 
     /** Maps every session's `sourceUid` to its verdict. */
-    fun classify(sessions: List<ExerciseSessionRecord>): Map<String, Verdict> {
+    fun classify(
+        sessions: List<ExerciseSessionRecord>,
+        /** Package name to priority, lower first. Absent sources sort last. */
+        sourcePriority: Map<String, Int> = emptyMap(),
+        /** Sources the athlete switched off: never chosen to represent a workout. */
+        disabledSources: Set<String> = emptySet(),
+    ): Map<String, Verdict> {
         val ordered = sessions.sortedBy { it.startTime }
         val clusters = mutableListOf<MutableList<ExerciseSessionRecord>>()
 
@@ -47,7 +53,17 @@ object SessionGrouping {
 
         val verdicts = mutableMapOf<String, Verdict>()
         for (cluster in clusters) {
-            val representative = cluster.maxWith(richness)
+            // The athlete's trust order wins when they have expressed one; the content
+            // heuristic only breaks ties between sources they rank equally.
+            val representative = cluster.maxWith(
+                compareBy<ExerciseSessionRecord> {
+                    if (it.metadata.dataOrigin.packageName in disabledSources) 0 else 1
+                }
+                    .thenByDescending {
+                        sourcePriority[it.metadata.dataOrigin.packageName] ?: Int.MAX_VALUE
+                    }
+                    .then(richness),
+            )
             for (session in cluster) {
                 verdicts[session.metadata.id] = Verdict(
                     duplicateOf = if (session.metadata.id == representative.metadata.id) {
