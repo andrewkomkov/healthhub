@@ -1,14 +1,85 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { api, type User } from './core/api/client'
 import { applyDynamicTheme } from './core/m3e/dynamicTheme'
 import { AuthScreen } from './features/auth/AuthScreen'
+
+/**
+ * The detail screen carries MapLibre and µPlot — around three quarters of the bundle. Loading
+ * it lazily keeps the feed's first screen small, which is the budget that actually matters:
+ * the feed is what opens on a cold cache, and most sessions never leave it.
+ */
+const ActivityScreen = lazy(() =>
+  import('./features/activity/ActivityScreen').then((module) => ({
+    default: module.ActivityScreen,
+  })),
+)
+
+/**
+ * Every screen that is not the feed loads the same way, for the same reason. These three are
+ * placeholders today, but each is destined to carry something heavy — the archive its own
+ * list, sources a drag-and-drop implementation, health a chart stack — and the feed's first
+ * screen must not grow when they land.
+ */
+const ArchiveScreen = lazy(() =>
+  import('./features/archive/ArchiveScreen').then((module) => ({
+    default: module.ArchiveScreen,
+  })),
+)
+
+const SourcesScreen = lazy(() =>
+  import('./features/sources/SourcesScreen').then((module) => ({
+    default: module.SourcesScreen,
+  })),
+)
+
+const HealthScreen = lazy(() =>
+  import('./features/health/HealthScreen').then((module) => ({
+    default: module.HealthScreen,
+  })),
+)
 import { FeedScreen } from './features/feed/FeedScreen'
 
-type Route = { name: 'feed' } | { name: 'activity'; id: string }
+type Route =
+  | { name: 'feed' }
+  | { name: 'activity'; id: string }
+  | { name: 'archive' }
+  | { name: 'sources' }
+  | { name: 'health' }
+
+const STATIC_ROUTES: Record<string, Route> = {
+  '/archive': { name: 'archive' },
+  '/sources': { name: 'sources' },
+  '/health': { name: 'health' },
+}
 
 function routeFromLocation(): Route {
-  const match = /^\/activities\/([^/]+)$/.exec(window.location.pathname)
-  return match ? { name: 'activity', id: match[1] as string } : { name: 'feed' }
+  const path = window.location.pathname
+  const match = /^\/activities\/([^/]+)$/.exec(path)
+  if (match) return { name: 'activity', id: match[1] as string }
+  return STATIC_ROUTES[path] ?? { name: 'feed' }
+}
+
+function pathForRoute(route: Route): string {
+  switch (route.name) {
+    case 'feed':
+      return '/'
+    case 'activity':
+      return `/activities/${route.id}`
+    default:
+      return `/${route.name}`
+  }
+}
+
+function Loading() {
+  return (
+    <div className="m3-page">
+      <p className="t-body-medium">Loading…</p>
+    </div>
+  )
+}
+
+function Lazily({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<Loading />}>{children}</Suspense>
 }
 
 export function App() {
@@ -45,47 +116,58 @@ export function App() {
   }, [user])
 
   function navigate(next: Route) {
-    const path = next.name === 'feed' ? '/' : `/activities/${next.id}`
-    window.history.pushState(null, '', path)
+    window.history.pushState(null, '', pathForRoute(next))
     setRoute(next)
   }
 
-  if (checking) {
-    return (
-      <div className="m3-page">
-        <p className="t-body-medium">Loading…</p>
-      </div>
-    )
-  }
+  if (checking) return <Loading />
 
   if (!user) return <AuthScreen onSignedIn={setUser} />
 
-  if (route.name === 'activity') {
-    // The detail surface — map, charts, splits — lands with User Story 3.
-    return (
-      <div className="m3-page">
-        <button className="m3-button m3-button--text" onClick={() => navigate({ name: 'feed' })}>
-          Back to activities
-        </button>
-        <div className="m3-empty">
-          <h2 className="t-title-large">Activity detail is on its way</h2>
-          <p className="t-body-medium">
-            The map, multi-series charts and splits for this activity arrive with the next
-            slice of work.
-          </p>
-        </div>
-      </div>
-    )
-  }
+  const toFeed = () => navigate({ name: 'feed' })
 
-  return (
-    <FeedScreen
-      user={user}
-      onOpenActivity={(id) => navigate({ name: 'activity', id })}
-      onSignOut={async () => {
-        await api.logout().catch(() => undefined)
-        setUser(null)
-      }}
-    />
-  )
+  switch (route.name) {
+    case 'activity':
+      return (
+        <Lazily>
+          <ActivityScreen id={route.id} user={user} onBack={toFeed} />
+        </Lazily>
+      )
+    case 'archive':
+      return (
+        <Lazily>
+          <ArchiveScreen
+            user={user}
+            onBack={toFeed}
+            onOpenActivity={(id) => navigate({ name: 'activity', id })}
+          />
+        </Lazily>
+      )
+    case 'sources':
+      return (
+        <Lazily>
+          <SourcesScreen user={user} onBack={toFeed} />
+        </Lazily>
+      )
+    case 'health':
+      return (
+        <Lazily>
+          <HealthScreen user={user} onBack={toFeed} />
+        </Lazily>
+      )
+    default:
+      return (
+        <FeedScreen
+          user={user}
+          onOpenActivity={(id) => navigate({ name: 'activity', id })}
+          onOpenArchive={() => navigate({ name: 'archive' })}
+          onOpenSources={() => navigate({ name: 'sources' })}
+          onOpenHealth={() => navigate({ name: 'health' })}
+          onSignOut={async () => {
+            await api.logout().catch(() => undefined)
+            setUser(null)
+          }}
+        />
+      )
+  }
 }

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type FeedActivity, type User } from '../../core/api/client'
+import { type FeedActivity, type User } from '../../core/api/client'
 import { distance, duration, elevation, localDate, paceOrSpeed, sportLabel } from '../../core/format'
+import { useActivityPages } from '../../core/paging'
 import { RouteThumbnail } from './RouteThumbnail'
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -83,68 +83,52 @@ function ActivityCard({
 export function FeedScreen({
   user,
   onOpenActivity,
+  onOpenArchive,
+  onOpenSources,
+  onOpenHealth,
   onSignOut,
 }: {
   user: User
   onOpenActivity: (id: string) => void
+  onOpenArchive: () => void
+  onOpenSources: () => void
+  onOpenHealth: () => void
   onSignOut: () => void
 }) {
-  const [activities, setActivities] = useState<FeedActivity[]>([])
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [exhausted, setExhausted] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const sentinel = useRef<HTMLDivElement>(null)
-
-  const loadMore = useCallback(async () => {
-    if (exhausted) return
-    setLoading(true)
-    try {
-      const page = await api.feed({ cursor })
-      setActivities((prev) => [...prev, ...page.activities])
-      setCursor(page.nextCursor)
-      if (!page.nextCursor) setExhausted(true)
-      setError(null)
-    } catch {
-      setError('Could not load your activities.')
-    } finally {
-      setLoading(false)
-    }
-  }, [cursor, exhausted])
-
-  useEffect(() => {
-    void loadMore()
-    // Intentionally runs once: subsequent pages are driven by the scroll sentinel.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  useEffect(() => {
-    const node = sentinel.current
-    if (!node || exhausted) return
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && !loading) void loadMore()
-      },
-      { rootMargin: '400px' },
-    )
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [loadMore, loading, exhausted])
+  const { activities, loading, error, sentinel, retry } = useActivityPages({
+    errorMessage: 'Could not load your activities.',
+  })
 
   return (
     <>
       <header className="m3-app-bar">
         <h1 className="t-title-large">Activities</h1>
-        <button className="m3-button m3-button--text" onClick={onSignOut}>
-          Sign out
-        </button>
+        {/* Plain text buttons until session 2 gives these screens a real navigation surface;
+            a route nothing links to may as well not exist. */}
+        <nav style={{ display: 'flex', gap: 'var(--hh-space-xs)' }}>
+          <button className="m3-button m3-button--text" onClick={onOpenHealth}>
+            Health
+          </button>
+          <button className="m3-button m3-button--text" onClick={onOpenArchive}>
+            Archive
+          </button>
+          <button className="m3-button m3-button--text" onClick={onOpenSources}>
+            Sources
+          </button>
+          <button className="m3-button m3-button--text" onClick={onSignOut}>
+            Sign out
+          </button>
+        </nav>
       </header>
 
       <div className="m3-page">
         {error && (
-          <p className="m3-error t-body-medium" role="alert">
-            {error}
-          </p>
+          <div className="m3-error m3-error--actionable" role="alert">
+            <p className="t-body-medium">{error}</p>
+            <button className="m3-button m3-button--text" onClick={retry}>
+              Try again
+            </button>
+          </div>
         )}
 
         {activities.map((activity) => (
@@ -156,7 +140,9 @@ export function FeedScreen({
           />
         ))}
 
-        {!loading && activities.length === 0 && (
+        {/* A failed first page is not an empty history, and saying so would be a small lie
+            told to someone whose connection dropped. */}
+        {!loading && !error && activities.length === 0 && (
           <div className="m3-empty">
             <h2 className="t-title-large">No activities yet</h2>
             <p className="t-body-medium">

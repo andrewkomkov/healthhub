@@ -1,0 +1,96 @@
+/*
+ * Archive-only styling, loaded with the archive chunk rather than from base.css.
+ *
+ * Same rule as everywhere else: no colour, radius, spacing or easing that is not a token.
+ * It lives here because the feed opens on a cold cache and must not carry the bytes of a
+ * screen most sessions never visit (docs/AGENT-NOTES.md, web client).
+ */
+
+.hh-archive-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-xs);
+  padding: var(--hh-space-lg);
+  border-radius: var(--md-sys-shape-large);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.hh-archive-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-md);
+  padding: var(--hh-space-lg);
+}
+
+.hh-archive-card__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The title is the only way into the activity, so it is the control — not the whole card.
+   A card that is itself a button cannot also hold buttons without confusing a screen reader. */
+.hh-archive-card__title {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--md-sys-shape-extra-small);
+}
+
+.hh-archive-card__title:hover {
+  color: var(--md-sys-color-primary);
+}
+
+.hh-archive-card__reason {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hh-space-sm);
+}
+
+/* A tonal pill: the Expressive way to carry a small piece of status next to a title. */
+.hh-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--hh-space-md);
+  border-radius: var(--md-sys-shape-full);
+  background: var(--md-sys-color-surface-container-highest);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-type-label-medium-size);
+  font-weight: 500;
+  letter-spacing: var(--md-sys-type-label-medium-tracking);
+  white-space: nowrap;
+}
+
+.hh-badge--accent {
+  background: var(--md-sys-color-tertiary-container);
+  color: var(--md-sys-color-on-tertiary-container);
+}
+
+.hh-archive-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hh-space-md);
+}
+
+.hh-archive-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hh-space-sm);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/* A restored row stays put and changes state instead of vanishing: the list would otherwise
+   reflow under the pointer, and the athlete would lose the row they just acted on. */
+.hh-archive-card--restored {
+  border-color: var(--md-sys-color-primary);
+}
