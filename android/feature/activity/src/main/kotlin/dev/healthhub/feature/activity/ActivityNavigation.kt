@@ -1,33 +1,29 @@
 package dev.healthhub.feature.activity
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
-import androidx.navigation.navDeepLink
 import androidx.navigation.navArgument
+import androidx.navigation.navDeepLink
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
-import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.navigation.Destination
 import dev.healthhub.core.navigation.NavContribution
 import dev.healthhub.core.navigation.Navigator
 import javax.inject.Inject
 
 /**
- * The detail surface — map, multi-series charts, splits and zones — lands with the next
- * slice. The contribution exists now so the route resolves and the deep link works.
+ * Attaches the detail screen to the graph.
+ *
+ * The deep link is what makes the screen reachable without touching the glass, which
+ * Constitution Principle VIII requires of every screen:
+ *
+ * ```
+ * adb shell am start -a android.intent.action.VIEW -d "healthhub://activity/<id>"
+ * ```
  */
 class ActivityNavContribution @Inject constructor() : NavContribution {
 
@@ -40,26 +36,11 @@ class ActivityNavContribution @Inject constructor() : NavContribution {
             deepLinks = listOf(
                 navDeepLink { uriPattern = "healthhub://${Destination.ActivityDetail.PATTERN}" },
             ),
-        ) { entry ->
-            val id = entry.arguments?.getString(Destination.ActivityDetail.ARG).orEmpty()
-            ActivityPlaceholder(activityId = id, onBack = navigator::back)
+        ) {
+            // The id reaches the view model through the SavedStateHandle rather than as an
+            // argument, so a process death restores the same activity without this file caring.
+            ActivityScreen(onBack = navigator::back)
         }
-    }
-}
-
-@Composable
-private fun ActivityPlaceholder(activityId: String, onBack: () -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(Spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(Spacing.md),
-    ) {
-        TextButton(onClick = onBack) { Text("Back") }
-        Text("Activity detail", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "The map, charts and splits for $activityId arrive with the next slice of work.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 

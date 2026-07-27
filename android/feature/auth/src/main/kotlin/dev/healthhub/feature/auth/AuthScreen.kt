@@ -129,7 +129,7 @@ fun AuthScreen(
                 imeAction = ImeAction.Done,
             ),
             supportingText = if (state.mode == AuthUiState.Mode.SIGN_UP) {
-                { Text("At least 10 characters.") }
+                { Text("At least $MIN_PASSWORD characters.") }
             } else {
                 null
             },

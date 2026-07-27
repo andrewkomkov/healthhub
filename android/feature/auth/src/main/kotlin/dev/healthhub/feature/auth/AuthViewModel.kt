@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+internal const val MIN_PASSWORD = 10
+
 data class AuthUiState(
     val mode: Mode = Mode.SIGN_IN,
     val busy: Boolean = false,
@@ -43,6 +45,15 @@ class AuthViewModel @Inject constructor(
     }
 
     fun submit(email: String, password: String, displayName: String) {
+        // The Worker cannot check this any more — it is handed a fixed-width digest, not a
+        // password (R-006 amendment). The rule still stands; this is now where it is kept.
+        if (_state.value.mode == AuthUiState.Mode.SIGN_UP && password.length < MIN_PASSWORD) {
+            _state.value = _state.value.copy(
+                error = "Choose a password of at least $MIN_PASSWORD characters.",
+            )
+            return
+        }
+
         viewModelScope.launch {
             _state.value = _state.value.copy(busy = true, error = null)
             runCatching {

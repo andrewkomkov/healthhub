@@ -71,6 +71,23 @@ sealed interface Destination {
         override val route = "settings"
     }
 
+    /** The recordings an automatic decision demoted. Nothing here was deleted. */
+    data object Archive : Destination {
+        override val route = "archive"
+    }
+
+    data object Sources : Destination {
+        override val route = "sources"
+    }
+
+    data object Health : Destination {
+        override val route = "health"
+    }
+
+    data object About : Destination {
+        override val route = "about"
+    }
+
     companion object {
         /** Every route the deep-link router must handle. Kept beside the definitions so a
          *  new screen cannot be added without this list noticing. */
@@ -80,6 +97,10 @@ sealed interface Destination {
             ActivityDetail.PATTERN,
             Sync.route,
             Settings.route,
+            Archive.route,
+            Sources.route,
+            Health.route,
+            About.route,
         )
     }
 }

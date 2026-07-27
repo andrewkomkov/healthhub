@@ -6,33 +6,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
-      The workout-domain permission set only (Constitution Principle IV). Sleep, biometric
-      and body-composition permissions are added when the features that need them ship, not
-      requested pre-emptively.
+      Every android.permission.health.* declaration now lives in core:healthconnect's manifest,
+      beside the registry that decides which of them is requested and when. Two lists that must
+      agree is one list too many — a record type added to the registry without a matching
+      declaration produces a request that can never be granted, and that failure is invisible.
+      The manifest merger folds them in from the library.
     -->
-    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
-    <!--
-      READ_EXERCISE_ROUTE is deliberately absent: the platform declares it prot=signature,
-      owned by com.google.android.healthconnect.controller, so no third-party app can hold
-      it. Routes are obtained per activity via REQUEST_EXERCISE_ROUTE instead.
-    -->
-    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
-    <uses-permission android:name="android.permission.health.READ_SPEED" />
-    <uses-permission android:name="android.permission.health.READ_POWER" />
-    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
-    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
-    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
-    <uses-permission android:name="android.permission.health.READ_STEPS" />
-    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
-    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
-
-    <!-- Required so the app can see the Health Connect provider on Android 13 and below. -->
-    <queries>
-        <package android:name="com.google.android.apps.healthdata" />
-        <intent>
-            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
-        </intent>
-    </queries>
 
     <application
         android:name=".HealthHubApplication"

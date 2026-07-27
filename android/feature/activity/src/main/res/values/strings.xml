@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The map has no account and no key. A basemap appears only if a deployment configures a tile
+    source it is entitled to use, exactly as the web client only shows one when VITE_MAP_TILES_URL
+    is set. Override these in :app (or a product flavour) to point at that source; left empty, the
+    route is drawn on the product's own surface colour and nothing is fetched from anyone.
+
+    The URL is a tile template, e.g. https://tiles.example.org/{z}/{x}/{y}.png
+-->
+<resources>
+    <string name="hh_map_tiles_url" translatable="false"></string>
+    <string name="hh_map_tiles_attribution" translatable="false"></string>
+</resources>

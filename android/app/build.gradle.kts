@@ -84,6 +84,9 @@ dependencies {
     implementation(project(":feature:activity"))
     implementation(project(":feature:sync"))
     implementation(project(":feature:settings"))
+    implementation(project(":feature:sources"))
+    implementation(project(":feature:health"))
+    implementation(project(":feature:about"))
 
     debugImplementation(project(":core:devcontrol"))
 

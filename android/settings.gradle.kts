@@ -44,3 +44,7 @@ include(":feature:feed")
 include(":feature:activity")
 include(":feature:sync")
 include(":feature:settings")
+include(":feature:sources")
+include(":feature:health")
+// Deliberately trivial. It exists to keep SC-012 honest — see feature/about.
+include(":feature:about")
