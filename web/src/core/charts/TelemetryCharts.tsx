@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
+import { axisRange } from './axisRange'
 import { describePanel } from './describe'
 import { useChartTheme } from './theme'
 
@@ -41,12 +42,6 @@ export interface TelemetryChartsProps {
   panelHeight?: number
 }
 
-/**
- * µPlot treats `null` as a gap and anything else as a value, so the sentinel-free `NaN`s the
- * codec produces have to be translated. Skipping this draws a straight line through every
- * tunnel and dropout in the ride — the canvas silently ignores a `NaN` coordinate and simply
- * continues the path from the last good point.
- */
 /** The Expressive line is heavier than the token's base weight; the token is still the source. */
 const STROKE_EMPHASIS = 1.5
 
@@ -69,6 +64,12 @@ function withAlpha(colour: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
+/**
+ * µPlot treats `null` as a gap and anything else as a value, so the sentinel-free `NaN`s the
+ * codec produces have to be translated. Skipping this draws a straight line through every
+ * tunnel and dropout in the ride — the canvas silently ignores a `NaN` coordinate and simply
+ * continues the path from the last good point.
+ */
 function toPlotData(values: Float64Array): (number | null)[] {
   const out = new Array<number | null>(values.length)
   for (let i = 0; i < values.length; i++) {
@@ -154,7 +155,15 @@ export function TelemetryCharts({
             // is drawn in, and a gap ring only reads as a gap if it is that colour.
             points: { size: 9, width: 3, stroke: () => colour, fill: () => theme.bed },
           },
-          scales: { x: { time: false } },
+          scales: {
+            x: { time: false },
+            // Fixed to the trimmed range rather than left to µPlot's auto-fit, which scales to
+            // the extremes and is what let one stopped sample flatten an entire walk.
+            y: (() => {
+              const bounds = axisRange(panel.values)
+              return bounds ? { range: () => bounds } : {}
+            })(),
+          },
           axes: [
             {
               show: isLast,

@@ -22,6 +22,18 @@ internal class ChartSeries(
     val present: BooleanArray,
     val min: Double,
     val max: Double,
+    /**
+     * The range the axis is drawn against, which is not the same as [min]..[max].
+     *
+     * One sample of near-zero speed — a walk pausing at a crossing — is a pace of 122 minutes per
+     * kilometre, and scaling to it squashed the entire workout into a sliver along the bottom
+     * edge of an otherwise empty panel. The axis is therefore built from a trimmed range and
+     * samples outside it are drawn clamped to the edge, so a spike still reads as a line running
+     * along the top rather than as a spike that silently vanished. Nothing is dropped; only the
+     * scale ignores the tails.
+     */
+    val displayMin: Double,
+    val displayMax: Double,
 ) {
 
     val hasData: Boolean get() = min <= max
@@ -51,6 +63,8 @@ internal class ChartSeries(
                     present = present,
                     min = Double.POSITIVE_INFINITY,
                     max = Double.NEGATIVE_INFINITY,
+                    displayMin = Double.POSITIVE_INFINITY,
+                    displayMax = Double.NEGATIVE_INFINITY,
                 )
             }
 
@@ -89,8 +103,78 @@ internal class ChartSeries(
                 }
             }
 
-            return ChartSeries(safeColumns, at, low, high, present, min, max)
+            val (displayMin, displayMax) = trimmedRange(low, high, present, min, max)
+            return ChartSeries(
+                safeColumns,
+                at,
+                low,
+                high,
+                present,
+                min,
+                max,
+                displayMin,
+                displayMax,
+            )
         }
+
+        /**
+         * The range with its outliers discounted, for the axis to be drawn against.
+         *
+         * Tukey fences — a quartile and a half of interquartile range beyond each quartile —
+         * rather than a fixed percentage off each end. The shape of the tail is the whole
+         * problem and it differs per channel: a walk that stops at four crossings has four
+         * near-zero speed samples, not one, so trimming a fixed 2% leaves the axis exactly as
+         * stretched as it was. A fence adapts to the distribution instead of guessing at it.
+         *
+         * Computed over the reduced columns rather than the raw samples: the reduction has
+         * already happened, it is at most a couple of thousand numbers, and a column that is
+         * *entirely* an outlier is precisely what should be discounted.
+         *
+         * The fences never widen the range — a channel with no outliers keeps its own bounds —
+         * and a distribution too small or too flat to have quartiles worth the name is left
+         * alone, because guessing at a tail there distorts more than it fixes.
+         */
+        private fun trimmedRange(
+            low: FloatArray,
+            high: FloatArray,
+            present: BooleanArray,
+            min: Double,
+            max: Double,
+        ): Pair<Double, Double> {
+            val values = ArrayList<Float>(present.size * 2)
+            for (i in present.indices) {
+                if (!present[i]) continue
+                values += low[i]
+                values += high[i]
+            }
+            if (values.size < MIN_VALUES_TO_TRIM) return min to max
+
+            values.sort()
+            val q1 = quantile(values, 0.25f)
+            val q3 = quantile(values, 0.75f)
+            val iqr = q3 - q1
+            if (iqr <= 0) return min to max
+
+            val lowFence = (q1 - FENCE * iqr).coerceAtLeast(min)
+            val highFence = (q3 + FENCE * iqr).coerceAtMost(max)
+            if (highFence <= lowFence) return min to max
+            return lowFence to highFence
+        }
+
+        /** Linear interpolation between the two order statistics either side of [fraction]. */
+        private fun quantile(sorted: List<Float>, fraction: Float): Double {
+            val position = (sorted.size - 1) * fraction
+            val lower = position.toInt()
+            val upper = (lower + 1).coerceAtMost(sorted.size - 1)
+            val weight = position - lower
+            return sorted[lower] * (1 - weight).toDouble() + sorted[upper] * weight.toDouble()
+        }
+
+        /** Below this there is no distribution to speak of, only a short recording. */
+        private const val MIN_VALUES_TO_TRIM = 16
+
+        /** Tukey's constant. 1.5 IQR is the conventional fence for a mild outlier. */
+        private const val FENCE = 1.5
 
         /**
          * More columns than this buys nothing: the chart is never that wide, and the arrays are

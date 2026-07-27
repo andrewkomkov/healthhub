@@ -339,19 +339,23 @@ private fun DrawScope.drawPanel(
 
     // The label band at the top of the bed is reserved before the series is scaled, so a peak
     // never draws through its own axis label.
-    val labelHeight = measurer.measure(format(series.max), labelStyle).size.height.toFloat()
+    val labelHeight = measurer.measure(format(series.displayMax), labelStyle).size.height.toFloat()
     val top = labelPadPx + labelHeight
     val bottom = size.height - labelPadPx - labelHeight
     val plotHeight = (bottom - top).coerceAtLeast(1f)
 
     // A flat channel — a turbo trainer holding 200 W — would otherwise divide by zero and be
     // drawn on the top edge; giving it a span puts the line through the middle instead.
-    val rawSpan = (series.max - series.min).takeIf { it > 0 } ?: 1.0
-    val low = series.min - rawSpan * RANGE_PAD
-    val high = series.max + rawSpan * RANGE_PAD
+    val rawSpan = (series.displayMax - series.displayMin).takeIf { it > 0 } ?: 1.0
+    val low = series.displayMin - rawSpan * RANGE_PAD
+    val high = series.displayMax + rawSpan * RANGE_PAD
     val range = high - low
 
-    fun yOf(value: Float): Float = (bottom - ((value - low) / range) * plotHeight).toFloat()
+    // Clamped, not dropped. A sample outside the trimmed range is drawn on the edge, so it still
+    // reads as "off the top of this axis" rather than disappearing.
+    fun yOf(value: Float): Float =
+        (bottom - ((value - low) / range) * plotHeight).toFloat().coerceIn(top, bottom)
+
     fun xOf(fraction: Float): Float = insetPx + fraction * plotWidthPx
 
     for (step in listOf(0f, 0.5f, 1f)) {
@@ -397,7 +401,7 @@ private fun DrawScope.drawPanel(
             // transparent tail of the gradient and show no fill at all.
             Brush.verticalGradient(
                 colors = listOf(colour.copy(alpha = FILL_TOP_ALPHA), Color.Transparent),
-                startY = yOf(series.max.toFloat()),
+                startY = yOf(series.displayMax.toFloat()),
                 endY = bottom,
             ),
         )
@@ -423,6 +427,27 @@ private fun DrawScope.drawPanel(
         colour,
         style = Stroke(width = lineWidthPx, cap = StrokeCap.Round, join = StrokeJoin.Round),
     )
+
+    /*
+     * A sample with no neighbour gets a marker of its own.
+     *
+     * Left to the stroke it becomes a round cap the width of the line — three pixels — and a
+     * channel that is mostly gaps, which is what an imported GPS track's altitude looks like
+     * beside a denser speed channel, renders as scattered specks that read as dirt on the
+     * screen rather than as measurements. Drawn at the mark token instead, the same data reads
+     * as what it is: points, because points are all the source recorded.
+     */
+    for (column in 0 until series.columns) {
+        if (!series.present[column]) continue
+        val before = column > 0 && series.present[column - 1]
+        val after = column < series.columns - 1 && series.present[column + 1]
+        if (before || after) continue
+        val centre = Offset(
+            xOf(series.at[column]),
+            yOf((series.high[column] + series.low[column]) / 2f),
+        )
+        drawCircle(colour, radius = dotRadiusPx * ISOLATED_DOT_SCALE, center = centre)
+    }
 
     // Where the series ends, marked. Cheap, and it stops a short track from reading as a stray
     // scratch in the middle of an otherwise empty bed.
@@ -458,10 +483,10 @@ private fun DrawScope.drawPanel(
 
     // Inside the bed, top-left and bottom-left. Outside it, they overhung the card — the gutter
     // they used to sit in was measured in pixels and did not follow the reader's font size.
-    axisLabel(measurer, format(series.max), labelStyle, chromeInkMuted)?.let {
+    axisLabel(measurer, format(series.displayMax), labelStyle, chromeInkMuted)?.let {
         drawText(it, topLeft = Offset(insetPx, labelPadPx))
     }
-    axisLabel(measurer, format(series.min), labelStyle, chromeInkMuted)?.let {
+    axisLabel(measurer, format(series.displayMin), labelStyle, chromeInkMuted)?.let {
         drawText(it, topLeft = Offset(insetPx, size.height - labelPadPx - it.size.height))
     }
 }
@@ -494,6 +519,9 @@ private const val CURSOR_ALPHA = 0.28f
 private const val FILL_TOP_ALPHA = 0.28f
 private const val READOUT_TINT_ALPHA = 0.16f
 private const val END_DOT_SCALE = 0.7f
+
+/** A lone sample is drawn as a mark, not as the round cap of a line that goes nowhere. */
+private const val ISOLATED_DOT_SCALE = 0.8f
 private val CURSOR_WIDTH = 4.dp
 
 /* -------------------------------------------------------------------------- gestures */

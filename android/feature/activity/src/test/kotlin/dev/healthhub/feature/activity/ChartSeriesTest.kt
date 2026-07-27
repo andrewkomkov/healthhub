@@ -75,4 +75,40 @@ class ChartSeriesTest {
         assertThat(series.columns).isEqualTo(2)
         assertThat(series.present.all { it }).isTrue()
     }
+
+    @Test
+    fun `one stopped sample does not stretch the axis over the whole walk`() {
+        // A walk holding about 1 m per second that pauses once at a crossing. Scaling to the
+        // pause squashes the entire recording into a sliver along the bottom edge.
+        val x = DoubleArray(60) { it.toDouble() }
+        val values = DoubleArray(60) { if (it == 30) 0.004 else 1.0 + (it % 5) * 0.05 }
+
+        val series = ChartSeries.build(x, values, columns = 60)
+
+        assertThat(series.min).isEqualTo(0.004)
+        assertThat(series.displayMin).isGreaterThan(0.5)
+        // Nothing is discarded — the sample is still there to be drawn, clamped to the edge.
+        assertThat(series.hasData).isTrue()
+    }
+
+    @Test
+    fun `a channel with no outliers keeps its own bounds`() {
+        val x = DoubleArray(40) { it.toDouble() }
+        val values = DoubleArray(40) { 100.0 + it }
+
+        val series = ChartSeries.build(x, values, columns = 40)
+
+        assertThat(series.displayMin).isEqualTo(series.min)
+        assertThat(series.displayMax).isEqualTo(series.max)
+    }
+
+    @Test
+    fun `a short recording is left alone rather than guessed at`() {
+        val x = DoubleArray(6) { it.toDouble() }
+        val values = doubleArrayOf(1.0, 1.0, 1.0, 1.0, 1.0, 40.0)
+
+        val series = ChartSeries.build(x, values, columns = 6)
+
+        assertThat(series.displayMax).isEqualTo(40.0)
+    }
 }
