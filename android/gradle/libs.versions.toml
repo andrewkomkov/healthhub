@@ -57,6 +57,7 @@ compose-material-icons = { module = "androidx.compose.material:material-icons-ex
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
 lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltWork" }
 
 health-connect = { module = "androidx.health.connect:connect-client", version.ref = "healthConnect" }
 

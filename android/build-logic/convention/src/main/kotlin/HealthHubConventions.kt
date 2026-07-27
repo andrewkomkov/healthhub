@@ -14,7 +14,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 internal const val MIN_SDK = 28
 internal const val TARGET_SDK = 36 // applied by the application module only
-internal const val COMPILE_SDK = 36
+internal const val COMPILE_SDK = 37 // required by Material 3 Expressive alpha
 internal val JAVA_VERSION: JavaVersion = JavaVersion.VERSION_21
 
 internal val Project.libs

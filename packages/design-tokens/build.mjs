@@ -127,9 +127,17 @@ function buildCss() {
 
 const argb = (hex) => `0xFF${hex.replace('#', '').toUpperCase()}`
 
+/**
+ * Roles that exist in the token file but not in Compose's ColorScheme. `shadow` is a real
+ * Material role, but Compose derives shadows from elevation instead of exposing a colour
+ * slot, so passing it is a compile error. It still reaches the web, which does use it.
+ */
+const NOT_IN_COMPOSE_COLOR_SCHEME = new Set(['shadow'])
+
 function buildKotlin() {
   const colorScheme = (mode) =>
     Object.entries(tokens.color[mode])
+      .filter(([role]) => !NOT_IN_COMPOSE_COLOR_SCHEME.has(role))
       .map(([role, hex]) => `        ${role} = Color(${argb(hex)}),`)
       .join('\n')
 

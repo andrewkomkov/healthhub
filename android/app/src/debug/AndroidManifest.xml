@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      The ADB control surface (Constitution Principle VIII) exists only in debug builds.
+
+      It is a ContentProvider rather than a BroadcastReceiver on purpose: a provider can see
+      its caller, so it checks the calling UID against shell and root and refuses everyone
+      else. That is stricter than a signature-level permission — which would still admit any
+      co-signed app, while locking out `adb shell` itself.
+    -->
+    <application>
+        <provider
+            android:name="dev.healthhub.core.devcontrol.DevControlProvider"
+            android:authorities="${applicationId}.devcontrol"
+            android:exported="true"
+            android:enabled="true" />
+    </application>
+</manifest>

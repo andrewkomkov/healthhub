@@ -1,0 +1,8 @@
+dist/
+build/
+node_modules/
+.gradle/
+.wrangler/
+web/src/core/m3e/generated-tokens.css
+android/
+package-lock.json

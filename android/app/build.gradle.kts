@@ -18,7 +18,7 @@ val baseUrl: String = Properties().apply {
 
 android {
     namespace = "dev.healthhub"
-    compileSdk = 36
+    compileSdk = 37 // required by Material 3 Expressive alpha
 
     defaultConfig {
         applicationId = "dev.healthhub"
@@ -107,7 +107,11 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
 
+    // The catalogue's junit-jupiter carries no version — the BOM supplies it, and Gradle
+    // needs the launcher on the test runtime classpath to start a worker at all.
+    testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.truth)
 }
 

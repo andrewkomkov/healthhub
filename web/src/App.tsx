@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, type User } from './core/api/client'
+import { applyDynamicTheme } from './core/m3e/dynamicTheme'
 import { AuthScreen } from './features/auth/AuthScreen'
 import { FeedScreen } from './features/feed/FeedScreen'
 
@@ -28,6 +29,20 @@ export function App() {
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [])
+
+  // Wear the Material You palette the athlete's phone extracted from their wallpaper.
+  // Failure is silent by design: the built-in palette is a perfectly good fallback and a
+  // missing personalisation is not worth an error message.
+  useEffect(() => {
+    if (!user) {
+      applyDynamicTheme(null)
+      return
+    }
+    api
+      .theme()
+      .then((result) => applyDynamicTheme(result.theme))
+      .catch(() => undefined)
+  }, [user])
 
   function navigate(next: Route) {
     const path = next.name === 'feed' ? '/' : `/activities/${next.id}`

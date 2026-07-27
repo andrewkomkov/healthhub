@@ -1,0 +1,15 @@
+---
+extends: default
+
+rules:
+  # GitHub workflows are naturally wide, and 80 columns would make them less readable.
+  line-length:
+    max: 120
+    level: warning
+  # `on:` in a workflow is a key, not the boolean true.
+  truthy:
+    allowed-values: ['true', 'false']
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  document-start: disable

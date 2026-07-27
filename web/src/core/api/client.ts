@@ -119,9 +119,21 @@ export interface Providers {
   auth0: boolean
 }
 
+export interface DynamicThemePayload {
+  light: Record<string, string>
+  dark: Record<string, string>
+  source: 'dynamic' | 'default'
+  updatedAt: number
+}
+
 export const api = {
   /** Which sign-in methods this deployment actually has configured. */
   providers: () => request<Providers>('/auth/providers'),
+
+  /** The Material You palette the athlete's phone extracted from their wallpaper. */
+  theme: () => request<{ theme: DynamicThemePayload | null }>('/theme'),
+
+  clearTheme: () => request<void>('/theme', { method: 'DELETE' }),
 
   register: (email: string, password: string, displayName: string) =>
     request<{ user: User }>('/auth/register', {

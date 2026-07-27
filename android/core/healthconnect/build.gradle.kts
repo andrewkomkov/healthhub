@@ -7,7 +7,7 @@ plugins {
 dependencies {
     implementation(project(":core:model"))
 
-    implementation(libs.health.connect)
+    api(libs.health.connect)
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.hilt.android)

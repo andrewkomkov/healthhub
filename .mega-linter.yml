@@ -1,0 +1,114 @@
+# MegaLinter configuration — https://megalinter.io
+#
+# The repository is public and mixes four ecosystems: a Cloudflare Worker and a React SPA in
+# TypeScript, an Android app in Kotlin, SQL migrations, and the CI that ties them together.
+# Every one of those gets linted here, plus a security sweep — an open-source health app that
+# leaks a credential or ships a vulnerable dependency has failed at the thing it promises.
+
+APPLY_FIXES: none # CI reports; fixes are a deliberate local action, never a surprise commit
+
+# Fail the build on anything a linter considers an error. A public repository whose CI is
+# permanently amber teaches contributors to ignore it.
+DISABLE_ERRORS: false
+
+SHOW_ELAPSED_TIME: true
+FLAVOR_SUGGESTIONS: true
+PRINT_ALPACA: false
+LOG_LEVEL: INFO
+
+# Report as a PR comment and as SARIF, so findings land in the GitHub Security tab rather
+# than only in a log nobody opens.
+GITHUB_COMMENT_REPORTER: true
+SARIF_REPORTER: true
+MARKDOWN_SUMMARY_REPORTER: true
+UPDATED_SOURCES_REPORTER: false
+EMAIL_REPORTER: false
+
+ENABLE:
+  - ACTION
+  - BASH
+  - CSS
+  - DOCKERFILE
+  - EDITORCONFIG
+  - ENV
+  - GHERKIN
+  - HTML
+  - JAVASCRIPT
+  - JSON
+  - KOTLIN
+  - MARKDOWN
+  - REPOSITORY
+  - SPELL
+  - SQL
+  - TSX
+  - TYPESCRIPT
+  - XML
+  - YAML
+
+DISABLE_LINTERS:
+  # Prettier and ESLint both format; ESLint owns correctness, Prettier owns layout, and
+  # running standard on top of them only produces contradictory advice.
+  - JAVASCRIPT_STANDARD
+  - TYPESCRIPT_STANDARD
+  # Checkov and KICS scan infrastructure-as-code; there is none — the only infrastructure is
+  # a wrangler.jsonc, which neither understands.
+  - REPOSITORY_CHECKOV
+  - REPOSITORY_KICS
+  # Copy-paste detection fires constantly on generated token files and on the deliberately
+  # parallel Kotlin/TypeScript codec implementations, which exist in two languages on purpose.
+  - COPYPASTE_JSCPD
+  # cspell needs a curated dictionary before it is useful rather than noisy; proselint is for
+  # prose, and this repository's prose is technical specification.
+  - SPELL_PROSELINT
+  - SPELL_LYCHEE
+
+# Security scanners worth failing over. Secrets in a public health-data repository are not a
+# style issue.
+REPOSITORY_GITLEAKS_ARGUMENTS: "--redact"
+REPOSITORY_TRIVY_ARGUMENTS: "--severity HIGH,CRITICAL"
+REPOSITORY_TRIVY_DISABLE_ERRORS: false
+REPOSITORY_SECRETLINT_DISABLE_ERRORS: false
+REPOSITORY_GITLEAKS_DISABLE_ERRORS: false
+REPOSITORY_TRUFFLEHOG_DISABLE_ERRORS: false
+REPOSITORY_SEMGREP_DISABLE_ERRORS: false
+REPOSITORY_DEVSKIM_DISABLE_ERRORS: false
+# Syft produces an SBOM rather than findings; useful as an artefact, not as a gate.
+REPOSITORY_SYFT_DISABLE_ERRORS: true
+REPOSITORY_GRYPE_ARGUMENTS: "--fail-on high"
+
+# Generated artefacts and vendored trees are excluded: linting a file that a build step
+# rewrites teaches contributors to edit the wrong thing.
+FILTER_REGEX_EXCLUDE: >-
+  (\.git/|node_modules/|dist/|build/|\.gradle/|\.wrangler/|
+  gradle/wrapper/|gradlew|gradlew\.bat|
+  web/src/core/m3e/generated-tokens\.css|
+  android/core/designsystem/src/main/kotlin/dev/healthhub/core/designsystem/GeneratedTokens\.kt|
+  android/core/database/schemas/|
+  package-lock\.json|LICENSE)
+
+# ---------------------------------------------------------------- per-linter configuration
+
+JAVASCRIPT_DEFAULT_STYLE: prettier
+TYPESCRIPT_DEFAULT_STYLE: prettier
+
+JSON_JSONLINT_FILTER_REGEX_EXCLUDE: "(tsconfig.*\\.json|\\.jsonc$)" # both allow comments
+JSON_PRETTIER_FILTER_REGEX_EXCLUDE: "(\\.jsonc$)"
+
+# ktlint is the formatter, detekt the analyser. Both read the Kotlin sources directly; the
+# Android sources use the official Kotlin style declared in gradle.properties.
+KOTLIN_KTLINT_ARGUMENTS: "--code-style=intellij_idea"
+KOTLIN_DETEKT_ARGUMENTS: "--build-upon-default-config"
+
+MARKDOWN_MARKDOWNLINT_CONFIG_FILE: .markdownlint.json
+MARKDOWN_MARKDOWN_LINK_CHECK_DISABLE_ERRORS: true # external links rot; that is not our defect
+
+SQL_SQLFLUFF_CONFIG_FILE: .sqlfluff
+
+YAML_YAMLLINT_CONFIG_FILE: .yamllint.yml
+YAML_PRETTIER_FILTER_REGEX_EXCLUDE: "(\\.github/workflows/)" # yamllint owns those
+
+SPELL_CSPELL_FILE_EXTENSIONS: [".md"]
+SPELL_CSPELL_ANALYZE_FILE_NAMES: false
+SPELL_CSPELL_CONFIG_FILE: .cspell.json
+
+BASH_SHELLCHECK_ARGUMENTS: "--severity=warning"

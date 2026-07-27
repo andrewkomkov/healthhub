@@ -1,0 +1,21 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "healthhub", "wrangler", "cloudflare", "workerd", "miniflare", "durable",
+    "maplibre", "uplot", "protomaps", "polyline", "haversine", "peucker",
+    "lttb", "hht", "parquet", "duckdb", "zstd", "iceberg",
+    "healthconnect", "androidx", "jetpack", "compose", "hilt", "dagger", "ksp",
+    "kotlinx", "okhttp", "gradle", "gradlew", "proguard", "mipmap", "adaptive",
+    "pbkdf", "argon", "scrypt", "jwks", "oidc", "auth0", "nonce", "pepper",
+    "strava", "trainingpeaks", "cadence", "bpm", "spo", "hrv", "vo2",
+    "speckit", "megalinter", "sqlfluff", "yamllint", "markdownlint",
+    "keyset", "upsert", "idempotency", "backfill", "downsample", "downsampled",
+    "expressive", "tonal", "deuteranopia", "protanopia", "tritanopia"
+  ],
+  "ignorePaths": [
+    "node_modules/**", "dist/**", "build/**", ".gradle/**",
+    "package-lock.json", "**/generated-tokens.css", "**/GeneratedTokens.kt",
+    "LICENSE"
+  ]
+}

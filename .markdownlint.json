@@ -1,0 +1,8 @@
+{
+  "$comment": "The specs are long technical documents; line length and inline HTML rules fight that for no benefit.",
+  "default": true,
+  "MD013": false,
+  "MD033": false,
+  "MD024": { "siblings_only": true },
+  "MD041": false
+}

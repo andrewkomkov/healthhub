@@ -6,6 +6,7 @@ import { activityRoutes } from './routes/activities'
 import { deviceRoutes } from './routes/devices'
 import { syncRoutes } from './routes/sync'
 import { telemetryRoutes } from './routes/telemetry'
+import { themeRoutes } from './routes/theme'
 
 /**
  * The entire server side of HealthHub.
@@ -41,6 +42,7 @@ app.route('/api/devices', deviceRoutes)
 app.route('/api/activities', activityRoutes)
 app.route('/api/activities', telemetryRoutes)
 app.route('/api/sync', syncRoutes)
+app.route('/api/theme', themeRoutes)
 
 app.notFound(notFound)
 app.onError(onError)

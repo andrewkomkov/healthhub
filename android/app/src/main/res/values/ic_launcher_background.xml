@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The seed colour the design tokens are generated from. -->
+    <color name="ic_launcher_background">#9A4A00</color>
+</resources>

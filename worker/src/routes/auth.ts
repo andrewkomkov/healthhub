@@ -227,6 +227,7 @@ export const authRoutes = new Hono<AppEnv>()
       db.prepare('DELETE FROM devices WHERE user_id = ?').bind(userId),
       db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),
       db.prepare('DELETE FROM identities WHERE user_id = ?').bind(userId),
+      db.prepare('DELETE FROM user_theme WHERE user_id = ?').bind(userId),
       db.prepare('DELETE FROM users WHERE id = ?').bind(userId),
     ])
 

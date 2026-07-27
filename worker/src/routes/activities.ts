@@ -18,7 +18,7 @@ import {
 
 const FEED_COLUMNS = `id, sport, title, start_time, tz_offset_minutes, elapsed_seconds,
   moving_seconds, distance_m, elevation_gain_m, avg_speed_mps, avg_hr_bpm, has_gps,
-  route_polyline, bounds_json`
+  route_polyline, bounds_json, source_package, source_count`
 
 interface FeedRow {
   id: string
@@ -35,6 +35,8 @@ interface FeedRow {
   has_gps: number
   route_polyline: string | null
   bounds_json: string | null
+  source_package: string | null
+  source_count: number | null
 }
 
 const feedItem = (row: FeedRow) => ({
@@ -52,6 +54,8 @@ const feedItem = (row: FeedRow) => ({
   hasGps: row.has_gps === 1,
   routePolyline: row.route_polyline,
   bounds: row.bounds_json ? (JSON.parse(row.bounds_json) as number[]) : null,
+  sourcePackage: row.source_package,
+  sourceCount: row.source_count ?? 1,
 })
 
 /** Keyset cursors are opaque to the client but are just `startTime:id`. */
@@ -115,8 +119,9 @@ export const activityRoutes = new Hono<AppEnv>()
          distance_m, elevation_gain_m, elevation_loss_m, calories_kcal,
          avg_speed_mps, max_speed_mps, avg_hr_bpm, max_hr_bpm, avg_cadence_rpm,
          avg_power_w, max_power_w, has_gps, route_polyline, bounds_json,
-         sample_count, channels_json, created_at, updated_at
-       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         sample_count, channels_json, source_package, duplicate_of, source_count,
+         created_at, updated_at
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT (user_id, source_uid) DO UPDATE SET
          sport = excluded.sport,
          title = excluded.title,
@@ -142,6 +147,9 @@ export const activityRoutes = new Hono<AppEnv>()
          bounds_json = excluded.bounds_json,
          sample_count = excluded.sample_count,
          channels_json = excluded.channels_json,
+         source_package = excluded.source_package,
+         duplicate_of = excluded.duplicate_of,
+         source_count = excluded.source_count,
          deleted_at = NULL,
          updated_at = excluded.updated_at`,
     )
@@ -174,6 +182,9 @@ export const activityRoutes = new Hono<AppEnv>()
         Array.isArray(bounds) ? JSON.stringify(bounds) : null,
         optionalInt(body, 'sampleCount') ?? 0,
         JSON.stringify(channels),
+        optionalStr(body, 'sourcePackage', { max: 200 }),
+        optionalStr(body, 'duplicateOf', { max: 200 }),
+        optionalInt(body, 'sourceCount') ?? 1,
         now,
         now,
       )
@@ -197,6 +208,8 @@ export const activityRoutes = new Hono<AppEnv>()
     const cursor = c.req.query('cursor')
 
     const where: string[] = ['user_id = ?', 'deleted_at IS NULL']
+    // One ride recorded by three apps is one row in the feed, not three.
+    if (c.req.query('includeDuplicates') !== '1') where.push('duplicate_of IS NULL')
     const binds: (string | number)[] = [userId]
 
     if (sport) {
