@@ -211,10 +211,33 @@ Space), and without it the app lands where it can see no data.
 
 **`READ_EXERCISE_ROUTE` can never be granted to us.** The platform declares it
 `prot=signature`, owned by `com.google.android.healthconnect.controller` — only Google-signed
-code can hold it. There is no plural `READ_EXERCISE_ROUTES`. Requesting it produces a
-permanently unmet requirement. GPS tracks are obtained **per activity** via
-`android.health.connect.action.REQUEST_EXERCISE_ROUTE` with a session id, which asks the
-athlete about one named workout.
+code can hold it. Requesting it produces a permanently unmet requirement. GPS tracks are
+obtained **per activity** via `android.health.connect.action.REQUEST_EXERCISE_ROUTE` with a
+session id, which asks the athlete about one named workout.
+
+**The plural `READ_EXERCISE_ROUTES` does exist, and the per-activity flow does not work
+without it.** An earlier note here said it did not exist. It does: `prot=dangerous`, added in
+API 35, verified with `dumpsys package permission android.permission.health.READ_EXERCISE_ROUTES`
+on the Pixel. The singular is the signature-level dead end; the plural is not.
+
+It must be **declared and never requested**, which is an odd combination worth stating plainly:
+
+- *Declared*, because `RouteRequestActivity` checks the caller's manifest before it draws
+  anything. Without the declaration it logs `E RouteRequestActivity: Read permission not
+  declared`, finishes with `RESULT_CANCELED`, and the athlete sees no dialog at all — the app
+  then reports the track as declined, which is a lie it has no way to detect. This is the whole
+  reason "Import route" did nothing for four months.
+- *Never requested*, because the platform ignores the request: *"Attempts to request the
+  permission by applications will be ignored"*. It is granted only by the athlete, in Health
+  Connect's settings or in the route request activity itself. So it stays out of
+  `HealthConnectSource.permissionsFor` — putting it there would recreate the permanently-unmet
+  requirement that removing the singular was meant to fix.
+
+Once it *is* granted, `readRecords` returns `ExerciseRouteResult.Data` directly and no
+confirmation appears at all. `RouteImportState.Offered` already carries the points in that case
+and imports without launching anything, so both paths were already handled — only the
+declaration was missing. `route-status --extra import:s:true` over ADB exercises the granted
+path end to end without a tap.
 
 **Do not build that intent by hand.** The action only exists on API 34+; on a device where
 Health Connect is still an installed APK — the SM-G780F — the request has to travel over the
@@ -236,6 +259,16 @@ reads the session again, re-reads its window, recomputes the duplicate verdict a
 whole thing through the same `ingest` a sync uses. Ten Health Connect reads for one tapped
 workout, which is fine — the quota is exhausted by hundreds of automatic reads, not by one
 deliberate one. What is *not* fine is a second implementation that only route imports use.
+
+**Match the session by `sourceUid`, never by start time.** The detail response now returns the
+Health Connect record id the activity was ingested from, and `RouteImporter.inspect` reads it.
+It used to re-derive the match from start time plus source package, which is ambiguous exactly
+when it matters: the same walk recorded by two apps is two sessions sharing a start instant, and
+`findSession` picked one of the pair arbitrarily. The import then re-ingested *that* session and
+upserted on **its** id, so the athlete tapped "Import route" on one activity and watched the
+track land on its duplicate — the activity in front of them still offering to import a route it
+already had. Two "Walking · 16:39" cards in the feed, one of which has a map, is the signature.
+The start-time path is still there as a fallback for rows uploaded before the field existed.
 
 **An imported track is not automatically the activity's distance.** It covers what its own
 recorder covered, which is sometimes the ten minutes before the battery died. Preferring it
