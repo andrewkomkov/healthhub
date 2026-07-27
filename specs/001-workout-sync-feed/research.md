@@ -482,15 +482,27 @@ specification.
 
 ## R-015 — GPS routes are not obtainable in bulk
 
-**Finding**: `android.permission.health.READ_EXERCISE_ROUTE` is declared by the platform with
-`prot=signature`, owned by `com.google.android.healthconnect.controller`. Only code signed
-with Google's key can hold it. There is no plural `READ_EXERCISE_ROUTES` on the device at
-all. Requesting it in the permission set produced a permission that could never be granted
-and that then sat in every sync report as an unmet requirement.
+**Finding**: `android.permission.health.READ_EXERCISE_ROUTE` — singular — is declared by the
+platform with `prot=signature`, owned by `com.google.android.healthconnect.controller`. Only
+code signed with Google's key can hold it. Requesting it in the permission set produced a
+permission that could never be granted and that then sat in every sync report as an unmet
+requirement.
 
-**Decision**: drop it from the manifest and the permission set. Obtain routes the way a
-third-party app actually can — `android.health.connect.action.REQUEST_EXERCISE_ROUTE` with a
-session id, which asks the athlete about **one named workout** and returns that track once.
+**Correction (verified on device)**: this entry previously said there was no plural
+`READ_EXERCISE_ROUTES` on the device at all. That was wrong, and the error was load-bearing —
+it is why "Import route" silently did nothing. The plural exists from API 35 with
+`prot=dangerous`. `RouteRequestActivity` refuses to draw its confirmation for a caller that has
+not **declared** it, logging `Read permission not declared` and returning `RESULT_CANCELED`
+with no dialog and no error the app can distinguish from a refusal.
+
+**Decision**: keep the singular out of the manifest and out of the permission set. **Declare**
+the plural in `core:healthconnect`'s manifest, and never request it — the platform documents
+that requests for it are ignored, and it is granted only by the athlete in Health Connect's
+settings or in the route request activity. Obtain routes the way a third-party app actually
+can — `android.health.connect.action.REQUEST_EXERCISE_ROUTE` with a session id, which asks the
+athlete about **one named workout** and returns that track once. When the athlete does grant
+the plural outright, sessions arrive carrying `ExerciseRouteResult.Data` and the import runs
+with no confirmation at all.
 
 **Consequence for the specification**: FR-017's "activities with GPS render their route"
 holds, but the route arrives per activity on the detail screen ("Import route") rather than

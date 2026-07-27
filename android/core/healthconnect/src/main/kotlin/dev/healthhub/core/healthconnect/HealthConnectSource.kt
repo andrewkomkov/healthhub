@@ -78,15 +78,19 @@ class HealthConnectSource @Inject constructor(
         // athlete's existing workout history would be invisible (SC-002).
         add(HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY)
         addAll(HealthRecordRegistry.forDomains(domains).map { it.permission })
-        // Note what is NOT here: android.permission.health.READ_EXERCISE_ROUTE.
+        // Note what is NOT here: either of the two route permissions, for two different reasons.
         //
-        // It exists on the platform, but `dumpsys package permission` reports it as
-        // `prot=signature`, owned by com.google.android.healthconnect.controller — so only
-        // code signed with Google's key can ever hold it. There is no plural
-        // READ_EXERCISE_ROUTES on this platform either. Requesting it produced a permission
-        // that could never be granted, which then sat in the sync report forever as an
-        // unmet requirement. See routesAvailableFor / requestRouteIntent below for the path
-        // that is actually open to third-party apps.
+        // Singular android.permission.health.READ_EXERCISE_ROUTE is `prot=signature`, owned by
+        // com.google.android.healthconnect.controller, so only Google-signed code can ever hold
+        // it. Requesting it produced a permission that could never be granted, which then sat in
+        // the sync report forever as an unmet requirement.
+        //
+        // Plural android.permission.health.READ_EXERCISE_ROUTES is `prot=dangerous` and could be
+        // requested — that is exactly why it is left out. Granting it is the athlete saying "any
+        // workout's GPS, without asking again", and this app asks per workout instead (R-015).
+        // It is *declared* in the manifest, because RouteRequestActivity refuses to draw its
+        // confirmation for a caller that has not declared it, and nothing but declaring it makes
+        // that dialogue appear. Declaring is not asking; only this set does the asking.
     }
 
     suspend fun grantedPermissions(): Set<String> =

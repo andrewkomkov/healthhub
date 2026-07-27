@@ -17,10 +17,19 @@
     <!-- Workouts. -->
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
     <!--
-      READ_EXERCISE_ROUTE is deliberately absent: the platform declares it prot=signature,
-      owned by com.google.android.healthconnect.controller, so no third-party app can hold
-      it. Routes are obtained per activity via REQUEST_EXERCISE_ROUTE instead.
+      Two route permissions exist and only one of them is a dead end. Singular
+      READ_EXERCISE_ROUTE is prot=signature, owned by
+      com.google.android.healthconnect.controller, and stays out of this file for good.
+
+      Plural READ_EXERCISE_ROUTES is prot=dangerous and is the one the per-activity flow
+      needs — not to be *granted*, but to be *declared*. RouteRequestActivity checks the
+      caller's manifest before it draws anything, and an app that has not declared it gets
+      `E RouteRequestActivity: Read permission not declared` in logcat and an immediate
+      RESULT_CANCELED: no dialog, no error, and a screen that says the route was not shared.
+      It is deliberately absent from HealthConnectSource.requiredPermissions, so the athlete
+      is still asked per workout and this never becomes a bulk-GPS request.
     -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTES" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_SPEED" />
     <uses-permission android:name="android.permission.health.READ_POWER" />
