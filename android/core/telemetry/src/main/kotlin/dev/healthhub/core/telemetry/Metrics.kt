@@ -33,6 +33,17 @@ object Metrics {
      */
     private const val ELEVATION_NOISE_THRESHOLD_M = 1.0
 
+    /**
+     * How far two independent measurements of one distance may disagree before neither is
+     * allowed to stand in for the other.
+     *
+     * The band is the one the two detail screens already use to reconcile the integrated track
+     * against the stored total (`TelemetryAnalysis`, `web/src/core/telemetry/analysis.ts`), and
+     * it lives here so there is one number rather than three.
+     */
+    const val MIN_DISTANCE_CORRECTION = 0.8
+    const val MAX_DISTANCE_CORRECTION = 1.25
+
     /** Great-circle distance. Haversine is accurate to well under a metre at these scales. */
     fun haversineMetres(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val dLat = Math.toRadians(lat2 - lat1)
@@ -199,6 +210,101 @@ object Metrics {
             )
         }
     }
+
+    /** Whether a distance is the GPS track's, the source's own aggregate, or nothing at all. */
+    enum class DistanceOrigin { GPS, RECORDED, NONE }
+
+    /** Whether the chosen distance survives being checked against speed over elapsed time. */
+    enum class DistanceAgreement { AGREES, DISAGREES, UNKNOWN }
+
+    data class DistanceVerdict(
+        val distanceM: Double?,
+        val origin: DistanceOrigin,
+        val agreement: DistanceAgreement,
+    )
+
+    /**
+     * Which distance to believe when a GPS track and a source's own aggregate both exist.
+     *
+     * Health Connect is a hub, and this is where the trap it sets is disarmed. A ride recorded
+     * by a bike computer and by a phone app carries two `DistanceRecord` sets over the same
+     * minutes; a route imported later covers whatever *its* recorder saw, which may be the
+     * whole ride or the ten minutes before the battery went. Preferring the track blindly once
+     * shrank a 42 km ride to the part that had a fix, and summing instead reported 89.59 km.
+     *
+     * So neither candidate is trusted on its own: each is checked against [expectedM], the
+     * distance implied by average speed over elapsed time, and the first one that reconciles
+     * wins.
+     *
+     * Plenty of recorders write a distance aggregate and no speed channel, so [expectedM] is
+     * often null. That must not become "the track wins": the partial-track case is *more*
+     * likely on exactly those workouts, and preferring it unchecked is the shrink-a-ride bug
+     * with the guard removed. Without a third figure the two candidates are compared to each
+     * other over the same band: the track wins on precision when it agrees with the source's own
+     * summary, and the summary wins when they disagree, because it is the recording app's claim
+     * about the whole of its own session while the track is only what one recorder saw. The
+     * agreement is still [DistanceAgreement.UNKNOWN] either way — no independent check ran.
+     */
+    fun reconcileDistance(
+        gpsM: Double?,
+        recordedM: Double?,
+        expectedM: Double?,
+    ): DistanceVerdict {
+        val gps = gpsM?.takeIf { it.isFinite() && it > 0 }
+        val recorded = recordedM?.takeIf { it.isFinite() && it > 0 }
+        val expected = expectedM?.takeIf { it.isFinite() && it > 0 }
+
+        if (gps == null && recorded == null) {
+            return DistanceVerdict(null, DistanceOrigin.NONE, DistanceAgreement.UNKNOWN)
+        }
+
+        if (expected == null) {
+            val preferTrack = gps != null && (recorded == null || agreesWithin(gps, recorded))
+            return if (preferTrack) {
+                DistanceVerdict(gps, DistanceOrigin.GPS, DistanceAgreement.UNKNOWN)
+            } else {
+                DistanceVerdict(recorded, DistanceOrigin.RECORDED, DistanceAgreement.UNKNOWN)
+            }
+        }
+
+        if (gps != null && agreesWithin(gps, expected)) {
+            return DistanceVerdict(gps, DistanceOrigin.GPS, DistanceAgreement.AGREES)
+        }
+        if (recorded != null && agreesWithin(recorded, expected)) {
+            return DistanceVerdict(recorded, DistanceOrigin.RECORDED, DistanceAgreement.AGREES)
+        }
+
+        // Neither reconciles. Something is still shown — a workout with no distance at all is a
+        // worse answer than an imperfect one — but the closer figure is used and the caller is
+        // told, so nothing downstream can present it as verified.
+        val gpsError = gps?.let { disagreement(it, expected) } ?: Double.MAX_VALUE
+        val recordedError = recorded?.let { disagreement(it, expected) } ?: Double.MAX_VALUE
+        return if (gpsError <= recordedError) {
+            DistanceVerdict(gps, DistanceOrigin.GPS, DistanceAgreement.DISAGREES)
+        } else {
+            DistanceVerdict(recorded, DistanceOrigin.RECORDED, DistanceAgreement.DISAGREES)
+        }
+    }
+
+    /**
+     * The distance an average speed implies over a span, or null without one.
+     *
+     * Elapsed rather than moving time, and the mean of the whole speed channel rather than of
+     * its moving samples: both include the stops, so the two errors cancel instead of stacking.
+     */
+    fun expectedDistance(avgSpeedMps: Double?, elapsedSeconds: Double): Double? {
+        if (avgSpeedMps == null || !avgSpeedMps.isFinite() || avgSpeedMps <= 0) return null
+        if (elapsedSeconds <= 0) return null
+        return avgSpeedMps * elapsedSeconds
+    }
+
+    private fun agreesWithin(candidate: Double, expected: Double): Boolean {
+        val correction = expected / candidate
+        return correction > MIN_DISTANCE_CORRECTION && correction < MAX_DISTANCE_CORRECTION
+    }
+
+    private fun disagreement(candidate: Double, expected: Double): Double =
+        kotlin.math.max(candidate, expected) / kotlin.math.min(candidate, expected)
 
     fun mean(values: DoubleArray): Double? {
         var sum = 0.0

@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every Health Connect permission the record registry can request, declared by the module that
+  owns the registry.
+
+  Declaring is not asking. A permission must be in the merged manifest before it can ever be
+  requested, but *when* it is requested is decided at run time by HealthFeatures: a fresh
+  install asks for the workout domain only, and sleep, recovery, body composition and blood
+  pressure are requested at the moment the athlete switches them on (Constitution Principle IV).
+  So this list is the app's ceiling, not its opening offer.
+
+  Adding a RegisteredRecord to HealthRecordRegistry without adding its permission here produces
+  a request that silently cannot be granted — the same failure mode READ_EXERCISE_ROUTE had.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Workouts. -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <!--
+      READ_EXERCISE_ROUTE is deliberately absent: the platform declares it prot=signature,
+      owned by com.google.android.healthconnect.controller, so no third-party app can hold
+      it. Routes are obtained per activity via REQUEST_EXERCISE_ROUTE instead.
+    -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SPEED" />
+    <uses-permission android:name="android.permission.health.READ_POWER" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <!-- StepsCadenceRecord reads under READ_STEPS; step counts themselves are not ingested. -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+
+    <!-- Sleep. -->
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+
+    <!-- Recovery. -->
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+
+    <!-- Body composition. -->
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+
+    <!-- Blood pressure. -->
+    <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE" />
+
+    <!-- Applies to every read above: scheduled sync, and history older than 30 days. -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+
+    <!-- Required so the app can see the Health Connect provider on Android 13 and below. -->
+    <queries>
+        <package android:name="com.google.android.apps.healthdata" />
+        <intent>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent>
+    </queries>
+</manifest>

@@ -1,11 +1,13 @@
 package dev.healthhub.core.sync
 
 import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
+import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.StepsCadenceRecord
+import dev.healthhub.core.model.RoutePoint
 import java.time.Instant
 
 /**
@@ -41,6 +43,16 @@ object ActivityAssembler {
     /** One measured sample: a timestamp and a value. */
     data class Sample(val at: Long, val value: Double)
 
+    /**
+     * [route] overrides whatever track the session itself carries.
+     *
+     * A session read during a normal sync almost never carries one: bulk route access is
+     * signature-level and reserved for Google's own app (R-015), so `exerciseRouteResult` comes
+     * back as `ConsentRequired` and the grid has no `lat`/`lon`. When the athlete later grants
+     * one activity's track through the platform's consent screen, the points arrive out of band
+     * and are handed in here — so a re-ingest with an imported route produces exactly the grid a
+     * sync would have produced if the track had been readable all along.
+     */
     fun build(
         session: ExerciseSessionRecord,
         heartRate: List<HeartRateRecord>,
@@ -48,6 +60,7 @@ object ActivityAssembler {
         power: List<PowerRecord>,
         cyclingCadence: List<CyclingPedalingCadenceRecord>,
         stepsCadence: List<StepsCadenceRecord>,
+        route: List<RoutePoint>? = null,
     ): Grid {
         val start = session.startTime
         val end = session.endTime
@@ -78,12 +91,9 @@ object ActivityAssembler {
                     .map { Sample(it.time.toEpochMilli(), it.rate) }
             ).sortedBy { it.at }
 
-        val route = session.exerciseRouteResult
-            .let { it as? androidx.health.connect.client.records.ExerciseRouteResult.Data }
-            ?.exerciseRoute
-            ?.route
-            ?.filter { it.time.within(start, end) }
-            .orEmpty()
+        val track = (route ?: session.recordedRoute())
+            .filter { Instant.ofEpochMilli(it.timeMs).within(start, end) }
+            .sortedBy { it.timeMs }
 
         // The union of every recorded instant — this is what makes the grid lossless.
         val instants = sortedSetOf<Long>()
@@ -91,7 +101,7 @@ object ActivityAssembler {
         speedSamples.forEach { instants += it.at }
         powerSamples.forEach { instants += it.at }
         cadenceSamples.forEach { instants += it.at }
-        route.forEach { instants += it.time.toEpochMilli() }
+        track.forEach { instants += it.timeMs }
 
         // A session with no samples at all still produces a valid, empty grid rather than
         // failing — an indoor workout with only a duration is a legitimate activity.
@@ -105,12 +115,12 @@ object ActivityAssembler {
         if (powerSamples.isNotEmpty()) grid.put("power", align(grid.timestamps, powerSamples))
         if (cadenceSamples.isNotEmpty()) grid.put("cadence", align(grid.timestamps, cadenceSamples))
 
-        if (route.isNotEmpty()) {
-            val lat = route.map { Sample(it.time.toEpochMilli(), it.latitude) }
-            val lon = route.map { Sample(it.time.toEpochMilli(), it.longitude) }
-            val elevation = route
-                .filter { it.altitude != null }
-                .map { Sample(it.time.toEpochMilli(), it.altitude!!.inMeters) }
+        if (track.isNotEmpty()) {
+            val lat = track.map { Sample(it.timeMs, it.lat) }
+            val lon = track.map { Sample(it.timeMs, it.lon) }
+            val elevation = track
+                .filter { it.altitudeM != null }
+                .map { Sample(it.timeMs, it.altitudeM!!) }
 
             grid.put("lat", align(grid.timestamps, lat))
             grid.put("lon", align(grid.timestamps, lon))
@@ -119,6 +129,14 @@ object ActivityAssembler {
 
         return grid
     }
+
+    /** The track a session carries on its own, which is empty unless the platform granted it. */
+    private fun ExerciseSessionRecord.recordedRoute(): List<RoutePoint> =
+        (exerciseRouteResult as? ExerciseRouteResult.Data)
+            ?.exerciseRoute
+            ?.route
+            ?.map { RoutePoint(it.time.toEpochMilli(), it.latitude, it.longitude, it.altitude?.inMeters) }
+            .orEmpty()
 
     /**
      * Places samples on the grid.

@@ -20,11 +20,37 @@ data class UserDto(
 @Serializable
 data class UserEnvelope(val user: UserDto)
 
+/**
+ * What a client-side KDF produced from the password (R-006 amendment).
+ *
+ * `scheme` names the algorithm and its parameters; `value` is 32 base64-encoded bytes. The
+ * Worker hashes it again with a per-user salt and stores that.
+ */
 @Serializable
-data class LoginRequest(val email: String, val password: String)
+data class PasswordProofDto(val scheme: String, val value: String)
 
+/**
+ * Sign-in carries both credentials, because the account decides which one counts.
+ *
+ * An account created before the pre-hash amendment stored a hash of the password itself, and
+ * no proof can verify it. Sending the password beside the proof is what lets the Worker verify
+ * the old record and rewrite it under the new scheme in the same request; once every account
+ * has signed in once, `password` comes out of this class.
+ */
 @Serializable
-data class RegisterRequest(val email: String, val password: String, val displayName: String)
+data class LoginRequest(
+    val email: String,
+    val password: String,
+    val passwordProofs: List<PasswordProofDto>,
+)
+
+/** Note what is absent: a new account is born pre-hashed, so the password never leaves here. */
+@Serializable
+data class RegisterRequest(
+    val email: String,
+    val displayName: String,
+    val passwordProofs: List<PasswordProofDto>,
+)
 
 @Serializable
 data class DeviceRegistrationRequest(

@@ -13,6 +13,9 @@ dependencies {
     api(project(":core:healthconnect"))
 
     implementation(libs.kotlinx.serialization.json)
+    // The /api/health-records calls are made here rather than in core:network, reusing the
+    // shared OkHttpClient and TokenStore so timeouts and credentials keep one definition.
+    implementation(libs.okhttp)
     implementation(libs.work.runtime)
     implementation(libs.hilt.work)
     ksp(libs.hilt.work.compiler)

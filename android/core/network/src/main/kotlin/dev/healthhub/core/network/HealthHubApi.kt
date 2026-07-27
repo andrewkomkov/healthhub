@@ -45,13 +45,32 @@ class HealthHubApi @Inject constructor(
 
     /* ------------------------------------------------------------------ auth */
 
-    suspend fun register(email: String, password: String, displayName: String): UserDto =
-        post("/api/auth/register", RegisterRequest(email, password, displayName), authenticated = false)
-            .decode<UserEnvelope>().user
+    /**
+     * The password is pre-hashed here rather than in `feature:auth`, so that every way into
+     * the app — the screen, and the debug `register` ADB command — sends the same thing.
+     */
+    suspend fun register(email: String, password: String, displayName: String): UserDto {
+        val proof = PasswordProofs.proof(email, password)
+        return post(
+            "/api/auth/register",
+            RegisterRequest(email, displayName, listOf(proof)),
+            authenticated = false,
+        ).decode<UserEnvelope>().user
+    }
 
-    suspend fun login(email: String, password: String): UserDto =
-        post("/api/auth/login", LoginRequest(email, password), authenticated = false)
-            .decode<UserEnvelope>().user
+    /**
+     * The raw password rides along only so an account created before the pre-hash amendment
+     * can be verified and migrated on the way through; the Worker ignores it for every account
+     * that already carries a client-scheme record.
+     */
+    suspend fun login(email: String, password: String): UserDto {
+        val proof = PasswordProofs.proof(email, password)
+        return post(
+            "/api/auth/login",
+            LoginRequest(email, password, listOf(proof)),
+            authenticated = false,
+        ).decode<UserEnvelope>().user
+    }
 
     suspend fun me(): UserDto = get("/api/auth/me").decode<UserEnvelope>().user
 

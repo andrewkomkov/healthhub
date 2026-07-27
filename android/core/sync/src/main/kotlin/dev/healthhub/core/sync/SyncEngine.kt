@@ -7,7 +7,9 @@ import dev.healthhub.core.database.PendingActivity
 import dev.healthhub.core.database.StagingDao
 import dev.healthhub.core.database.SyncStateEntity
 import dev.healthhub.core.healthconnect.HealthConnectSource
+import dev.healthhub.core.healthconnect.HealthRecordRegistry
 import dev.healthhub.core.model.DistanceUnit
+import dev.healthhub.core.model.RoutePoint
 import dev.healthhub.core.model.Sport
 import dev.healthhub.core.model.SyncFailure
 import dev.healthhub.core.model.SyncReport
@@ -57,6 +59,7 @@ class SyncEngine @Inject constructor(
     private val healthConnect: HealthConnectSource,
     private val api: HealthHubApi,
     private val staging: StagingDao,
+    private val healthRecords: HealthRecordSync,
 ) {
     private val json = Json { encodeDefaults = true; explicitNulls = false }
 
@@ -161,9 +164,9 @@ class SyncEngine @Inject constructor(
                 _progress.value =
                     Progress.Running(processed, sessions.size, session.title ?: "Workout")
                 runCatching { ingest(session, bulk, verdicts[session.metadata.id]) }
-                    .onSuccess { count ->
+                    .onSuccess { ingested ->
                         synced += 1
-                        samples += count
+                        samples += ingested.samples
                     }
                     .onFailure { error ->
                         failures += SyncFailure(
@@ -175,11 +178,49 @@ class SyncEngine @Inject constructor(
             }
         }
 
+        /*
+         * The daily-grain pass: sleep, HRV, resting heart rate, blood oxygen, weight, body fat
+         * and blood pressure.
+         *
+         * It runs after the workouts and keeps its own cursors, because this data exists on
+         * days with no workout on them — hanging it off the session windows would lose every
+         * reading taken on a rest day. Its failures join the report rather than replacing it: a
+         * sync that uploaded eleven rides and could not reach the sleep route is partial, not
+         * failed.
+         */
+        // Read before the health pass runs, because the exercise cursor answers one question
+        // only — was every one of *those* uploads confirmed. A sleep route that timed out must
+        // not make the next sync re-read a year of rides.
+        val workoutsClean = failures.isEmpty()
+
+        val health = runCatching {
+            healthRecords.sync(from, to) { stage ->
+                _progress.value = Progress.Running(processed, sessions.size, stage)
+            }
+        }.getOrElse { error ->
+            HealthRecordSync.Outcome(
+                failures = listOf(
+                    SyncFailure(
+                        sourceUid = "health-records",
+                        reason = error.message ?: error::class.simpleName.orEmpty(),
+                    ),
+                ),
+            )
+        }
+        failures += health.failures
+
         // Anything the registry does not cover is named, not swallowed (Principle VI).
         if (missing.isNotEmpty()) unhandled += missing.map { "permission:$it" }
+        // Domains switched off, and permissions a switched-on domain still needs.
+        unhandled += health.skipped
+        // And the types this app does not model at all, so "HealthHub shows none of my nutrition
+        // data" has an answer on the same screen as the question.
+        unhandled += HealthRecordRegistry.notIngested.map { "not-ingested:${it.typeName}" }
 
-        // Only now, with every upload confirmed, is it safe to move the cursor forward.
-        if (failures.isEmpty()) {
+        // Only now, with every upload confirmed, is it safe to move the cursor forward. The
+        // daily-grain domains keep their own cursors and have already advanced the ones that
+        // succeeded; this one is the exercise sessions'.
+        if (workoutsClean) {
             recordCursor(to)
         }
 
@@ -188,13 +229,23 @@ class SyncEngine @Inject constructor(
             finishedAt = System.currentTimeMillis(),
             status = when {
                 failures.isEmpty() -> SyncStatus.OK
-                synced > 0 -> SyncStatus.PARTIAL
+                // Anything at all reaching the server makes this partial rather than failed —
+                // including a night of sleep on a day with no workout on it, which is the whole
+                // reason the daily-grain pass exists.
+                synced > 0 || health.nightsSynced > 0 || health.measurementsSynced > 0 ->
+                    SyncStatus.PARTIAL
                 else -> SyncStatus.FAILED
             },
             sessionsSynced = synced,
             samplesSynced = samples,
             failures = failures,
-            unhandledTypes = unhandled.toList(),
+            // Ordered by what the athlete can act on. The registry's not-ingested catalogue is
+            // two dozen entries long and never changes; burying "permission still needed"
+            // underneath it alphabetically would make the one actionable line the last one read.
+            unhandledTypes = unhandled.sortedBy { entry ->
+                UNHANDLED_ORDER.indexOfFirst { entry.startsWith(it) }.takeIf { it >= 0 }
+                    ?: UNHANDLED_ORDER.size
+            },
         )
 
         runCatching { api.postReport(report.toRequest()) }
@@ -224,12 +275,30 @@ class SyncEngine @Inject constructor(
         elevation = healthConnect.readElevation(from, to),
     )
 
-    /** Computes one session's metrics from the window's data, writes telemetry and uploads. */
+    /** What one session's ingest produced, for whoever asked for it. */
+    data class Ingested(
+        val activityId: String,
+        val samples: Long,
+        /** Vertices in the simplified polyline the feed thumbnail draws; 0 when there is no track. */
+        val polylinePoints: Int,
+        val distanceM: Double?,
+        val distanceOrigin: Metrics.DistanceOrigin,
+        val distanceAgreement: Metrics.DistanceAgreement,
+    )
+
+    /**
+     * Computes one session's metrics from the window's data, writes telemetry and uploads.
+     *
+     * [route] is the track an athlete granted for this one activity after the fact; without it
+     * the session's own (usually absent) route is used, so a sync and a route import run the
+     * very same code and cannot produce two different versions of the same workout.
+     */
     private suspend fun ingest(
         session: ExerciseSessionRecord,
         window: WindowData,
         verdict: SessionGrouping.Verdict?,
-    ): Long {
+        route: List<RoutePoint>? = null,
+    ): Ingested {
         val from = session.startTime
         val to = session.endTime
 
@@ -246,6 +315,7 @@ class SyncEngine @Inject constructor(
             power = window.power.filter { overlaps(it.startTime, it.endTime) },
             cyclingCadence = window.cyclingCadence.filter { overlaps(it.startTime, it.endTime) },
             stepsCadence = window.stepsCadence.filter { overlaps(it.startTime, it.endTime) },
+            route = route,
         )
 
         val time = grid.get("t") ?: DoubleArray(0)
@@ -306,14 +376,36 @@ class SyncEngine @Inject constructor(
         )
 
         val gpsDistanceM = cumulative?.lastOrNull()?.takeIf { it > 0 }
-        // The GPS track is the more precise measurement when it exists; the recorded
-        // aggregate is the fallback, not the other way round.
-        val distanceM = gpsDistanceM ?: recordedDistanceM
+        val elapsedSeconds = session.endTime.epochSecond - session.startTime.epochSecond
+
+        /*
+         * The GPS track is the more precise measurement — but only of what it actually saw.
+         *
+         * A track imported one activity at a time covers whatever its recorder covered, which
+         * on a real ride is sometimes the ten minutes before the battery died. Taking it over
+         * the source's own aggregate without checking would shrink a 42 km ride to 6 km, which
+         * is the same class of error as summing across sources and inflating it to 89.59 km.
+         * So both candidates are checked against speed over elapsed time and the one that
+         * reconciles wins.
+         */
+        val distance = Metrics.reconcileDistance(
+            gpsM = gpsDistanceM,
+            recordedM = recordedDistanceM,
+            expectedM = Metrics.expectedDistance(
+                avgSpeedMps = speed?.let { Metrics.mean(it) },
+                elapsedSeconds = elapsedSeconds.toDouble(),
+            ),
+        )
+        val distanceM = distance.distanceM
+        val distanceIsTheTrack = distance.origin == Metrics.DistanceOrigin.GPS
 
         val elevationChange = elevation?.let { Metrics.elevationChange(it) }
         val simplified = if (lat != null && lon != null) Route.simplify(lat, lon) else emptyList()
 
-        val splits = if (cumulative != null) {
+        // Splits are per kilometre *of this activity's distance*. When the track is not that
+        // distance — a partial route beside a complete aggregate — splitting it would number
+        // kilometres the workout does not agree it rode.
+        val splits = if (cumulative != null && distanceIsTheTrack) {
             Metrics.splits(
                 timeMs = time,
                 cumulativeDistanceM = cumulative,
@@ -344,7 +436,7 @@ class SyncEngine @Inject constructor(
             startTime = session.startTime.toEpochMilli(),
             endTime = session.endTime.toEpochMilli(),
             tzOffsetMinutes = tzOffsetMinutes(session),
-            elapsedSeconds = (session.endTime.epochSecond - session.startTime.epochSecond),
+            elapsedSeconds = elapsedSeconds,
             // Zero is not a measurement here: a session whose speed channel never crosses the
             // moving threshold has *unknown* moving time, not none, and reporting 0 makes the
             // feed show "0:00" for a real workout.
@@ -359,8 +451,7 @@ class SyncEngine @Inject constructor(
                 // Without a speed channel, average speed still follows from distance over
                 // moving time — which is what the feed card shows as pace.
                 ?: distanceM?.let { metres ->
-                    val seconds = (session.endTime.epochSecond - session.startTime.epochSecond)
-                    if (seconds > 0) metres / seconds else null
+                    if (elapsedSeconds > 0) metres / elapsedSeconds else null
                 },
             maxSpeedMps = speed?.let { Metrics.max(it) },
             avgHrBpm = heartRate?.let { Metrics.mean(it)?.toInt() },
@@ -426,7 +517,60 @@ class SyncEngine @Inject constructor(
         fullFile.delete()
         previewFile?.delete()
 
-        return grid.size.toLong()
+        return Ingested(
+            activityId = uploaded.id,
+            samples = grid.size.toLong(),
+            polylinePoints = simplified.size,
+            distanceM = distanceM,
+            distanceOrigin = distance.origin,
+            distanceAgreement = distance.agreement,
+        )
+    }
+
+    /**
+     * Re-ingests one workout with a GPS track the athlete has just granted.
+     *
+     * This is the second half of the per-activity route flow (R-015). The first half happens on
+     * the detail screen, where the platform's consent screen names the workout and hands back
+     * the points; here the session is read again and put through **the same ingest as a sync**,
+     * so the polyline, bounds, distance, splits and the rewritten `.hht` are produced by one
+     * implementation rather than by a second one that only route imports use.
+     *
+     * The duplicate verdict is recomputed rather than assumed, because the upload is idempotent
+     * on the session id and re-posting without one would resurrect a recording the athlete's
+     * source order had already set aside.
+     *
+     * Ten Health Connect reads, all for one workout the athlete explicitly asked about. That is
+     * far above the per-session budget a backfill has to keep to, and deliberately so: the
+     * quota is exhausted by hundreds of sessions read automatically, not by one read on a tap.
+     */
+    suspend fun importRoute(sourceUid: String, route: List<RoutePoint>): Ingested {
+        require(route.isNotEmpty()) { "importRoute needs at least one point" }
+
+        val session = healthConnect.readSession(sourceUid)
+            ?: throw IllegalStateException("This workout is not in Health Connect on this phone.")
+
+        _progress.value = Progress.Running(0, 1, session.title ?: "Importing route")
+        try {
+            val window = readWindow(session.startTime, session.endTime)
+
+            // Padded, because the recordings this one may be a duplicate of start and end at
+            // slightly different instants — that disagreement is the reason grouping exists.
+            val neighbours = healthConnect.readSessions(
+                session.startTime.minusSeconds(GROUPING_PAD_SECONDS),
+                session.endTime.plusSeconds(GROUPING_PAD_SECONDS),
+            )
+            val preferences = runCatching { api.sources() }.getOrDefault(emptyList())
+            val verdict = SessionGrouping.classify(
+                sessions = neighbours.ifEmpty { listOf(session) },
+                sourcePriority = preferences.associate { it.packageName to it.priority },
+                disabledSources = preferences.filterNot { it.enabled }.map { it.packageName }.toSet(),
+            )[session.metadata.id]
+
+            return ingest(session, window, verdict, route)
+        } finally {
+            _progress.value = Progress.Idle
+        }
     }
 
     /**
@@ -560,6 +704,18 @@ class SyncEngine @Inject constructor(
          * eight API calls instead of eight per session.
          */
         const val WINDOW_MS = 24L * 60 * 60 * 1000
+
+        /**
+         * Report ordering: what the athlete can do something about, first.
+         *
+         * A permission that has not been granted is a tap away from fixed; a domain switched off
+         * is a switch away; a type this app does not model is neither, and is there so that its
+         * absence is never silent.
+         */
+        val UNHANDLED_ORDER = listOf("permission:", "disabled:", "not-ingested:")
+
+        /** How far either side of one session its possible duplicates are looked for. */
+        const val GROUPING_PAD_SECONDS = 600L
         /** First run reaches back a year; anything older is a deliberate full backfill. */
         const val DEFAULT_BACKFILL_SECONDS = 365L * 24 * 60 * 60
 

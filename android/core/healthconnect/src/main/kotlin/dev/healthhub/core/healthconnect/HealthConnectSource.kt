@@ -1,39 +1,51 @@
 package dev.healthhub.core.healthconnect
 
 import android.content.Context
+import androidx.activity.result.contract.ActivityResultContract
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ElevationGainedRecord
+import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import dagger.hilt.android.qualifiers.ApplicationContext
+import dev.healthhub.core.model.RoutePoint
 import java.time.Instant
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.math.abs
 import kotlin.reflect.KClass
 
 /**
  * Everything the app knows about Health Connect.
  *
- * The record types are held in a registry rather than hard-coded call sites. This slice
- * implements the workout domain; sleep, cardiovascular, body composition and the rest are
- * added as registry entries without reworking the sync engine — which is what makes
- * Constitution Principle VI's "able to ingest all 80+ types" an additive job rather than a
- * rewrite. A type encountered but not registered is reported, never silently dropped.
+ * The record types are held in a registry rather than hard-coded call sites — see
+ * [HealthRecordRegistry], which now covers workouts, sleep, recovery, body composition and
+ * blood pressure. That registry is what makes Constitution Principle VI's "able to ingest all
+ * 80+ types" an additive job rather than a rewrite, and its `notIngested` list is what keeps
+ * everything it does *not* cover from being silently absent.
  */
 @Singleton
 class HealthConnectSource @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val features: HealthFeatures,
 ) {
     val availability: Availability
         get() = when (HealthConnectClient.getSdkStatus(context)) {
@@ -48,19 +60,24 @@ class HealthConnectSource @Inject constructor(
     private val client: HealthConnectClient by lazy { HealthConnectClient.getOrCreate(context) }
 
     /**
-     * The permission set for this slice.
+     * What to ask for right now: the domains the athlete has switched on, and nothing else.
      *
-     * Deliberately narrow (Principle IV): workout data only. Sleep and biometric permissions
-     * are requested when the features that need them ship, not pre-emptively.
+     * Principle IV is enforced here rather than described. A fresh install has only
+     * [HealthDomain.WORKOUTS] on, so the first dialogue asks for exercise data; turning on
+     * sleep or recovery on the health screen widens this set and the request is made there,
+     * next to the sentence explaining why. Asking for all of it at install time is how an
+     * athlete decides to grant none of it.
      */
-    val permissions: Set<String> = buildSet {
+    val permissions: Set<String> get() = permissionsFor(features.enabled.value)
+
+    fun permissionsFor(domains: Set<HealthDomain>): Set<String> = buildSet {
         // Background reading is what lets sync run on a schedule rather than only while the
         // athlete has the app open (FR-005).
         add(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND)
         // History access: without it, a first sync can only see the recent past, and the
         // athlete's existing workout history would be invisible (SC-002).
         add(HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY)
-        addAll(WORKOUT_RECORD_TYPES.map { HealthPermission.getReadPermission(it) })
+        addAll(HealthRecordRegistry.forDomains(domains).map { it.permission })
         // Note what is NOT here: android.permission.health.READ_EXERCISE_ROUTE.
         //
         // It exists on the platform, but `dumpsys package permission` reports it as
@@ -77,11 +94,95 @@ class HealthConnectSource @Inject constructor(
 
     suspend fun missingPermissions(): Set<String> = permissions - grantedPermissions()
 
+    /**
+     * What one domain still needs, whether or not it is switched on.
+     *
+     * The health screen asks this before offering a switch, so turning sleep on can request
+     * exactly the sleep permission instead of re-prompting for everything already held.
+     */
+    suspend fun missingPermissionsFor(domain: HealthDomain): Set<String> {
+        val granted = grantedPermissions()
+        return HealthRecordRegistry.forDomains(setOf(domain))
+            .map { it.permission }
+            .filterNot { it in granted }
+            .toSet()
+    }
+
+    /** True when every record type this domain needs is already granted. */
+    suspend fun isGranted(domain: HealthDomain): Boolean = missingPermissionsFor(domain).isEmpty()
+
     fun permissionRequestContract() = PermissionController.createRequestPermissionResultContract()
 
     /** Reads every workout session in the window, oldest first. */
     suspend fun readSessions(from: Instant, to: Instant): List<ExerciseSessionRecord> =
         readAll(ExerciseSessionRecord::class, from, to)
+
+    /**
+     * One session by the id the activity was uploaded under, or null if this phone has never
+     * seen it.
+     *
+     * Null is a real answer, not a swallowed error: an activity synced from the athlete's other
+     * phone is on the server and not in this device's Health Connect, and the detail screen has
+     * to be able to say so.
+     */
+    suspend fun readSession(recordId: String): ExerciseSessionRecord? =
+        runCatching { client.readRecord(ExerciseSessionRecord::class, recordId).record }.getOrNull()
+
+    /**
+     * Finds the session an uploaded activity came from.
+     *
+     * The server stores the Health Connect record id as `sourceUid` but does not return it, so
+     * the phone matches on what the detail response does carry: the recording app and the start
+     * instant, which the upload took verbatim from the session. The window is padded because a
+     * `between` filter is not obliged to return a record that merely overlaps its edge.
+     */
+    suspend fun findSession(
+        startTimeMs: Long,
+        endTimeMs: Long,
+        sourcePackage: String?,
+    ): ExerciseSessionRecord? {
+        val candidates = readSessions(
+            Instant.ofEpochMilli(startTimeMs).minusMillis(MATCH_TOLERANCE_MS),
+            Instant.ofEpochMilli(endTimeMs).plusMillis(MATCH_TOLERANCE_MS),
+        ).filter { sourcePackage == null || it.metadata.dataOrigin.packageName == sourcePackage }
+
+        return candidates.firstOrNull { it.startTime.toEpochMilli() == startTimeMs }
+            ?: candidates
+                .filter { abs(it.startTime.toEpochMilli() - startTimeMs) <= MATCH_TOLERANCE_MS }
+                .minByOrNull { abs(it.startTime.toEpochMilli() - startTimeMs) }
+    }
+
+    /**
+     * What this session has to say about a GPS track — which is three different answers, and
+     * conflating them is exactly the failure this API exists to prevent.
+     *
+     * [RouteState.Absent] means the recording app wrote no positions at all. That is data
+     * absence, not a permission problem, and presenting it as one sends the athlete hunting
+     * through Health Connect's settings for a switch that does not exist.
+     */
+    fun routeState(session: ExerciseSessionRecord): RouteState =
+        when (val result = session.exerciseRouteResult) {
+            is ExerciseRouteResult.Data -> RouteState.Available(
+                result.exerciseRoute.route.map {
+                    RoutePoint(it.time.toEpochMilli(), it.latitude, it.longitude, it.altitude?.inMeters)
+                },
+            )
+
+            // The session holds a track, and the platform will only hand it over after the
+            // athlete confirms this one workout by name.
+            is ExerciseRouteResult.ConsentRequired -> RouteState.ConsentRequired
+
+            // Named rather than swept into the `else`: this is the answer the whole per-activity
+            // flow is arranged around. The recording app wrote no positions, so there is nothing
+            // to consent to and no setting that would produce one.
+            is ExerciseRouteResult.NoData -> RouteState.Absent
+
+            // ExerciseRouteResult is an abstract class rather than a sealed one, so the branch
+            // is required. A subtype added by a later SDK is treated as "no track" rather than
+            // as consent, because inviting an athlete to grant something that may not exist is
+            // the failure this type was written to prevent.
+            else -> RouteState.Absent
+        }
 
     suspend fun readHeartRate(from: Instant, to: Instant): List<HeartRateRecord> =
         readAll(HeartRateRecord::class, from, to)
@@ -106,6 +207,39 @@ class HealthConnectSource @Inject constructor(
 
     suspend fun readCalories(from: Instant, to: Instant): List<TotalCaloriesBurnedRecord> =
         readAll(TotalCaloriesBurnedRecord::class, from, to)
+
+    /* ------------------------------------------------------------- daily grain
+     *
+     * Sleep and the scalar measurements exist on days with no workout at all, so they cannot
+     * ride along with the session windows — they get their own pass in core:sync. What they
+     * keep is the *shape*: one read per type per window, never one per record. Eight reads per
+     * session is what exhausted the provider's quota around session 75, and adding seven types
+     * to a per-record loop would reproduce it exactly.
+     *
+     * A night arrives whole: SleepSessionRecord carries its own stage intervals, so the
+     * hypnogram costs no additional call.
+     */
+
+    suspend fun readSleepSessions(from: Instant, to: Instant): List<SleepSessionRecord> =
+        readAll(SleepSessionRecord::class, from, to)
+
+    suspend fun readHrv(from: Instant, to: Instant): List<HeartRateVariabilityRmssdRecord> =
+        readAll(HeartRateVariabilityRmssdRecord::class, from, to)
+
+    suspend fun readRestingHeartRate(from: Instant, to: Instant): List<RestingHeartRateRecord> =
+        readAll(RestingHeartRateRecord::class, from, to)
+
+    suspend fun readOxygenSaturation(from: Instant, to: Instant): List<OxygenSaturationRecord> =
+        readAll(OxygenSaturationRecord::class, from, to)
+
+    suspend fun readWeight(from: Instant, to: Instant): List<WeightRecord> =
+        readAll(WeightRecord::class, from, to)
+
+    suspend fun readBodyFat(from: Instant, to: Instant): List<BodyFatRecord> =
+        readAll(BodyFatRecord::class, from, to)
+
+    suspend fun readBloodPressure(from: Instant, to: Instant): List<BloodPressureRecord> =
+        readAll(BloodPressureRecord::class, from, to)
 
     /**
      * Reads every page of a record type.
@@ -147,13 +281,24 @@ class HealthConnectSource @Inject constructor(
      * confirmation naming that workout, and returns the track once.
      *
      * That is a per-activity action rather than a sync-wide permission, so it belongs on the
-     * activity detail screen ("Import route"), not in the permission set.
+     * activity detail screen ("Import route"), not in the permission set. Use the contract
+     * rather than building [ACTION_REQUEST_EXERCISE_ROUTE] by hand: that action only exists on
+     * API 34 and above, and on a device where Health Connect is still an installed APK the
+     * request has to travel over the SDK's own service instead. The contract picks the road.
      */
-    fun requestRouteIntent(sessionId: String) = android.content.Intent(ACTION_REQUEST_EXERCISE_ROUTE)
-        .putExtra(EXTRA_SESSION_ID, sessionId)
+    fun routeRequestContract(): ActivityResultContract<String, List<RoutePoint>?> =
+        ExerciseRouteContract()
 
     companion object {
         private const val PAGE_SIZE = 1000
+
+        /**
+         * How far an uploaded activity's start may sit from its session's.
+         *
+         * They are the same number in every activity this app uploaded — the upload copies the
+         * session's instant — so this only ever absorbs the edge behaviour of the time filter.
+         */
+        private const val MATCH_TOLERANCE_MS = 60_000L
 
         /** Platform action for requesting a single session's route. */
         const val ACTION_REQUEST_EXERCISE_ROUTE =
@@ -161,19 +306,14 @@ class HealthConnectSource @Inject constructor(
         const val EXTRA_SESSION_ID = "android.health.connect.extra.SESSION_ID"
 
         /**
-         * The workout-domain registry. Adding a type here is all it takes for the sync engine
-         * to start requesting permission for it and reading it.
+         * The workout-domain registry, derived rather than repeated.
+         *
+         * It used to be the whole registry; it is now one domain of [HealthRecordRegistry], and
+         * reading it from there is what stops the two lists disagreeing about which types the
+         * workout sync covers.
          */
-        val WORKOUT_RECORD_TYPES: List<KClass<out Record>> = listOf(
-            ExerciseSessionRecord::class,
-            HeartRateRecord::class,
-            SpeedRecord::class,
-            PowerRecord::class,
-            CyclingPedalingCadenceRecord::class,
-            StepsCadenceRecord::class,
-            DistanceRecord::class,
-            ElevationGainedRecord::class,
-            TotalCaloriesBurnedRecord::class,
-        )
+        val WORKOUT_RECORD_TYPES: List<KClass<out Record>>
+            get() = HealthRecordRegistry.forDomains(setOf(HealthDomain.WORKOUTS))
+                .map { it.recordType }
     }
 }

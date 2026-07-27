@@ -47,6 +47,20 @@ data class Bounds(
     val maxLon: Double,
 )
 
+/**
+ * One GPS fix, independent of who recorded it.
+ *
+ * A track reaches the app by two different roads — inside an exercise session during a normal
+ * sync, or one activity at a time through the platform's route-consent screen (R-015) — and
+ * the ingest path must not be able to tell which. This is the type both roads arrive as.
+ */
+data class RoutePoint(
+    val timeMs: Long,
+    val lat: Double,
+    val lon: Double,
+    val altitudeM: Double? = null,
+)
+
 data class Split(
     val index: Int,
     val unit: DistanceUnit,
