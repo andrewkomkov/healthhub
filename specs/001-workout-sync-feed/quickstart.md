@@ -84,9 +84,15 @@ installed and Samsung Health writing into it.
 cd android
 ./gradlew :app:assembleDebug
 
-# NOTE: this device has a Secure Folder profile (user 150). Installing without
-# --user 0 puts the app in the wrong profile and it will not see Health Connect data.
-adb -s RZ8R21EG0DJ install --user 0 -r app/build/outputs/apk/debug/app-debug.apk
+# NOTE: some devices carry a second profile (Secure Folder, Private Space). Installing
+# without --user 0 puts the app in the wrong profile, where it sees no Health Connect data.
+#
+# NOTE: do NOT add -g. Pre-granting makes the Health Connect SDK believe every permission it
+# knows about is already held, so its request contract returns immediately and the in-app
+# "Grant" button silently does nothing. Worse, READ_EXERCISE_ROUTE cannot be pre-granted at
+# all ("not a changeable permission type"), so GPS tracks stay unreachable with no way to
+# fix it from inside the app. Install clean and let the athlete grant through the dialog.
+adb -s <serial> install --user 0 -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Point the app at your deployment by setting `HEALTHHUB_BASE_URL` in
