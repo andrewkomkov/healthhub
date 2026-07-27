@@ -1,0 +1,39 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "healthhub",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-26",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // The web SPA is served by this same Worker as static assets — there is no separate
+  // Pages project and no second origin. run_worker_first is scoped to /api/* so static
+  // requests never enter the script.
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // Small, queryable, relational data (Constitution Principle II).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "healthhub",
+      "database_id": "be5b25fd-fb32-434b-b84c-7b23d56fa412",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Large and historical data: telemetry blobs, previews, future exports.
+  "r2_buckets": [
+    {
+      "binding": "BLOBS",
+      "bucket_name": "healthhub-data"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

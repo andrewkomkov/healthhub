@@ -1,0 +1,52 @@
+name: android
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'packages/design-tokens/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'packages/design-tokens/**', '.github/workflows/android.yml']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The Android theme is generated from the same token source as the web client;
+      # without this step the designsystem module has nothing to compile against.
+      - name: Generate design tokens
+        run: npm run tokens
+
+      - uses: gradle/actions/setup-gradle@v5
+
+      - name: Build
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Unit tests
+        working-directory: android
+        run: ./gradlew --no-daemon test
+
+      - name: Lint
+        working-directory: android
+        run: ./gradlew --no-daemon lint
+
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: healthhub-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn

@@ -107,8 +107,22 @@ server-side rasterisation.
 
 ## R-006 — Authentication: opaque tokens in D1
 
-**Decision**: Passwords are hashed with PBKDF2-SHA-256 via WebCrypto (600,000 iterations,
-per-user random salt). Web sessions are opaque random tokens in an `HttpOnly`, `Secure`,
+**Decision**: Passwords are hashed with PBKDF2-SHA-256 via WebCrypto (100,000 iterations,
+per-user random salt).
+
+**Amended after deployment**: the original figure was 600,000. The Workers runtime rejects it
+outright — `Pbkdf2 failed: iteration counts above 100000 are not supported` — so 100,000 is
+the platform ceiling, not a tuning choice. This was caught by deploying and exercising the
+route, not by reading documentation; the local `workerd` dev runtime does not enforce the
+limit, so it passes locally and fails in production. Worth remembering for anything else
+crypto-related.
+
+The encoded hash embeds its own iteration count, so the parameters can be raised later
+without invalidating stored passwords. The way to buy more work without spending Worker CPU
+is a **client-side pre-hash** — the browser and the phone run a high-iteration KDF and send
+the result, which the Worker then salts and hashes at 100,000. That also fits Principle I,
+since the expensive part runs on the athlete's device. It is queued as a hardening task
+rather than done now, because it has to be implemented identically in three places. Web sessions are opaque random tokens in an `HttpOnly`, `Secure`,
 `SameSite=Lax` cookie, stored in D1. Devices hold a separate long-lived opaque device token,
 also a D1 row, revocable individually.
 
@@ -214,6 +228,122 @@ FR-007 (deletions propagate, since change tokens report deletions).
 **Rejected**: *Full re-read on every sync* — fails SC-003 and drains battery. *Advancing the
 cursor before upload* — loses data on interruption. *Client-generated identifiers* — would
 duplicate on reinstall; the Health Connect UID is the natural idempotency key.
+
+## R-013 — Two storage tiers: interactive `.hht`, analytical Parquet
+
+R-002 was challenged with the standard R2 large-data playbook: Parquet with zstd, Iceberg on
+top, 128–512 MB objects, Hive-style partitioned prefixes, multipart upload, and range reads
+from DuckDB or ClickHouse. That playbook is correct — for the workload it describes. This
+project has two workloads, and they want opposite things.
+
+**Decision**: keep `.hht` for the interactive tier, and add a Parquet analytical tier.
+
+### Interactive tier — one activity, read whole, by a browser
+
+Stays `.hht` (R-002). The reasoning that survives the challenge:
+
+- The reader is a browser rendering one activity. It needs **every sample of the channels it
+  charts**, so column projection and predicate pushdown — Parquet's entire advantage — buy
+  nothing. There is no `WHERE` clause; the query is always "give me all of it".
+- Parquet's footer-then-column range dance is a win when it lets you avoid downloading data.
+  Here it would mean 2–3 sequential round trips to fetch data we were going to fetch anyway,
+  adding latency to the 3-second interactivity target (SC-005).
+- `.hht` decodes by pointing typed arrays at an `ArrayBuffer`. Any Parquet reader — even a
+  light one — decodes pages into JS arrays first. That decode is the thing SC-005 cannot
+  afford.
+- **zstd specifically does not work here**: browsers decompress gzip natively via
+  `DecompressionStream`; zstd is not universally available, so a zstd object would require
+  shipping a decompressor to every reader. Interactive objects therefore stay gzip.
+
+Sizes make the point: a typical activity is a few hundred kilobytes compressed, a five-hour
+million-sample ride a few megabytes. These are not 128 MB analytical files, and padding them
+into one would destroy the "read exactly one activity" access pattern.
+
+### Analytical tier — the whole history, read by a query engine
+
+This is where the playbook applies, and it is genuinely missing from the original design. A
+scheduled compaction job rolls closed months into partitioned Parquet:
+
+```text
+u/{user_id}/archive/activities/year=2026/month=07/part-0001.parquet   # one row per activity
+u/{user_id}/archive/samples/year=2026/month=07/part-0001.parquet      # long-format samples
+```
+
+- **Parquet + zstd** — the reader here is DuckDB, ClickHouse or Polars, all of which handle
+  zstd natively and benefit from column projection and partition pruning.
+- **Target 128–512 MB per part**, produced by compacting many activities — the small-files
+  problem is real for a query engine even though it is irrelevant to the interactive tier.
+- **Hive-style partitioning** by year and month, so `WHERE year = 2026` prunes prefixes.
+- Combined with R2's zero egress, this makes the athlete's full history queryable from
+  anywhere at no transfer cost — which is a genuine product feature, not just plumbing:
+  ```sql
+  SELECT sport, sum(distance_m)/1000 AS km
+  FROM 's3://healthhub-data/u/<uid>/archive/activities/year=2026/*/*.parquet'
+  GROUP BY sport;
+  ```
+
+**Explicitly deferred**: Iceberg and Delta Lake. They buy ACID, schema evolution and time
+travel over an append-only, single-writer, immutable dataset that has none of those problems.
+The partitioned-Parquet layout is a strict subset of an Iceberg table, so adopting Iceberg
+later is additive rather than a migration.
+
+**Rejected**: *replacing `.hht` with Parquet everywhere* — trades the interactive tier's
+zero-parse read for an optimisation that only pays off when you skip data, which the
+interactive tier never does. *Keeping only `.hht` and querying it with DuckDB* — DuckDB
+cannot read a bespoke format, which is exactly why the analytical tier exists.
+
+### Consequences adopted from the playbook
+
+- Key layout gains date partitioning in **both** tiers, so prefixes prune and lifecycle rules
+  are expressible (data-model.md).
+- Telemetry upload uses **multipart upload above 100 MB** with 8 MB parts, so a million-sample
+  activity on a flaky mobile connection resumes per part rather than restarting.
+- Compaction runs from a **Cron Trigger**, batching whole months; it never runs per activity,
+  which is what would recreate the small-files problem in the analytical tier.
+- Compaction is *file assembly*, not analysis: it concatenates already-computed rows. No
+  aggregation happens in the Worker, so Principle I still holds.
+
+## R-014 — DuckDB-Wasm: in the browser, not in the Worker
+
+**Decision**: Adopt DuckDB-Wasm for whole-history analytical queries over the Parquet archive
+tier — running **in the athlete's browser**, reading from R2 over HTTP range requests. Do not
+run DuckDB inside the Worker.
+
+The proposal to run it in the Worker is technically real, and the mechanics described are
+right: range-read the Parquet footer, fetch only the needed columns, aggregate in memory. The
+objection is not that it doesn't work — it is where the work happens.
+
+**Why the browser wins here, on this project's own terms**:
+
+- **Principle I is the whole architecture.** "Aggregation happens on the user's device" is the
+  reason there is no backend, no database and no bill. Putting the query engine in the Worker
+  moves analysis back to the server — quietly reintroducing the thing the design exists to
+  avoid. The browser placement gets every benefit of DuckDB while keeping the principle.
+- **The stated limits bite in the Worker and not in the browser.** A 15–20 MB Wasm binary
+  against a Worker bundle limit; 128 MB of isolate memory; a 100–300 ms cold start on every
+  isolate. A browser tab has none of these constraints — hundreds of megabytes of heap, the
+  Wasm cached by the HTTP cache after first load, and a cold start the user pays once per
+  session rather than per request.
+- **Credentials.** Running in the Worker means S3 access keys live in the Worker and the
+  Worker becomes the thing that must be trusted with every athlete's data. In the browser,
+  the page fetches through the ownership-checked proxy already built for `.hht`, and no
+  long-lived S3 credential exists at all.
+- **Zero egress makes the browser path free.** The reason server-side aggregation is normally
+  preferred is bandwidth cost. R2 removes that argument specifically.
+
+**What this changes**: the analytical tier (R-013) gains a defined client. `web/src/core/analytics/`
+loads DuckDB-Wasm lazily — only when the athlete opens a whole-history view, never on the feed
+path — and queries the partitioned Parquet directly. Partition pruning and column projection do
+the heavy lifting, so a "distance by sport across 2026" query touches a few megabytes.
+
+**Kept from the proposal**: R2 Event Notifications are a good fit for triggering compaction
+when new activities land, and are recorded as an option for the archive job.
+
+**Reconsider if**: a future feature needs cross-athlete aggregation (leaderboards, segment
+rankings for the planned social modules). That genuinely cannot run on one athlete's device,
+and at that point a Worker-side query engine — or a scheduled job writing precomputed
+leaderboard rows into D1 — becomes the right call. It is not needed for anything in this
+specification.
 
 ## Open risks
 

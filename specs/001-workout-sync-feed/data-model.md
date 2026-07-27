@@ -194,14 +194,35 @@ user row.
 One bucket. Keys are prefixed by user so that account deletion is a prefix sweep and no
 ownership question can arise from a key alone.
 
+Two tiers with different access patterns and therefore different formats (R-013).
+
+**Interactive tier** — one activity, read whole by a client, gzip so browsers decompress it
+natively. Date-partitioned so prefixes prune and lifecycle rules stay expressible:
+
 ```text
-u/{user_id}/a/{activity_id}/full.hht      # full-resolution telemetry
-u/{user_id}/a/{activity_id}/preview.hht   # ~2000 points per channel (R-003)
-u/{user_id}/a/{activity_id}/export.gpx    # later phase
+u/{user_id}/activities/year=2026/month=07/{activity_id}/full.hht      # full resolution
+u/{user_id}/activities/year=2026/month=07/{activity_id}/preview.hht   # ~2000 points/channel
+u/{user_id}/activities/year=2026/month=07/{activity_id}/export.gpx    # later phase
 ```
 
-Keys are never guessable-by-design and are never served directly: every read passes through
-the Worker's ownership check (R-004).
+**Analytical tier** — the whole history, read by a query engine, Parquet + zstd, compacted
+into 128–512 MB parts by a scheduled job. Never read by the app itself:
+
+```text
+u/{user_id}/archive/activities/year=2026/month=07/part-0001.parquet   # one row per activity
+u/{user_id}/archive/samples/year=2026/month=07/part-0001.parquet      # long-format samples
+```
+
+Partitioning is by the activity's **local** start date, so a month's prefix matches what the
+athlete would call that month.
+
+Keys are never guessable-by-design and are never served directly: every interactive read
+passes through the Worker's ownership check (R-004). The analytical tier is reached with
+scoped S3 credentials the athlete generates for themselves — R2 charges no egress, so
+querying a full history from DuckDB or ClickHouse costs nothing in transfer.
+
+**Uploads above 100 MB use multipart** with 8 MB parts, so a million-sample activity on a
+mobile connection resumes part-by-part instead of restarting.
 
 ## Telemetry codec (`.hht` v1)
 

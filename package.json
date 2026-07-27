@@ -1,0 +1,43 @@
+{
+  "name": "healthhub",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Strava-class analytics for Google Health Connect data, with no backend",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "packages/design-tokens",
+    "web",
+    "worker"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "tokens": "node packages/design-tokens/build.mjs",
+    "dev": "npm run tokens && concurrently -n web,worker -c cyan,magenta \"npm:dev:web\" \"npm:dev:worker\"",
+    "dev:web": "npm --workspace web run dev",
+    "dev:worker": "npm --workspace worker run dev",
+    "build": "npm run tokens && npm --workspace web run build && npm --workspace worker run typecheck",
+    "typecheck": "npm run tokens && npm --workspace web run typecheck && npm --workspace worker run typecheck",
+    "test": "npm run tokens && npm --workspace worker run test && npm --workspace web run test",
+    "test:e2e": "npm --workspace web run test:e2e",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "deploy": "npm run build && npm --workspace worker run deploy",
+    "db:migrate:local": "npm --workspace worker run db:migrate:local",
+    "db:migrate:remote": "npm --workspace worker run db:migrate:remote"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.4",
+    "eslint": "^10.8.0",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.65.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20260722.1": true
+  }
+}

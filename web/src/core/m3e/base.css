@@ -1,0 +1,277 @@
+/*
+ * The Material 3 Expressive foundation for the web client.
+ *
+ * Every value here comes from generated-tokens.css, which is built from
+ * packages/design-tokens/tokens.json — the same file that generates the Android theme.
+ * Nothing in this stylesheet may introduce a colour, radius, or easing of its own.
+ */
+
+@import './generated-tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--md-sys-color-background);
+  color: var(--md-sys-color-on-background);
+  font-family: var(--md-sys-type-font-family);
+  font-size: var(--md-sys-type-body-medium-size);
+  line-height: var(--md-sys-type-body-medium-line-height);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ----------------------------------------------------------------- type roles */
+
+.t-display-large,
+.t-headline-large,
+.t-headline-medium,
+.t-headline-small,
+.t-title-large,
+.t-title-medium,
+.t-title-small,
+.t-body-large,
+.t-body-medium,
+.t-body-small,
+.t-label-large,
+.t-label-medium,
+.t-label-small {
+  margin: 0;
+}
+
+.t-display-large {
+  font-size: var(--md-sys-type-display-large-size);
+  line-height: var(--md-sys-type-display-large-line-height);
+  font-weight: var(--md-sys-type-display-large-weight);
+  letter-spacing: var(--md-sys-type-display-large-tracking);
+}
+.t-headline-large {
+  font-size: var(--md-sys-type-headline-large-size);
+  line-height: var(--md-sys-type-headline-large-line-height);
+  font-weight: var(--md-sys-type-headline-large-emphasized-weight, 600);
+}
+.t-headline-medium {
+  font-size: var(--md-sys-type-headline-medium-size);
+  line-height: var(--md-sys-type-headline-medium-line-height);
+  font-weight: 600;
+}
+.t-headline-small {
+  font-size: var(--md-sys-type-headline-small-size);
+  line-height: var(--md-sys-type-headline-small-line-height);
+  font-weight: 500;
+}
+.t-title-large {
+  font-size: var(--md-sys-type-title-large-size);
+  line-height: var(--md-sys-type-title-large-line-height);
+  font-weight: 500;
+}
+.t-title-medium {
+  font-size: var(--md-sys-type-title-medium-size);
+  line-height: var(--md-sys-type-title-medium-line-height);
+  font-weight: var(--md-sys-type-title-medium-weight);
+  letter-spacing: var(--md-sys-type-title-medium-tracking);
+}
+.t-body-large {
+  font-size: var(--md-sys-type-body-large-size);
+  line-height: var(--md-sys-type-body-large-line-height);
+}
+.t-body-medium {
+  font-size: var(--md-sys-type-body-medium-size);
+  line-height: var(--md-sys-type-body-medium-line-height);
+}
+.t-body-small {
+  font-size: var(--md-sys-type-body-small-size);
+  line-height: var(--md-sys-type-body-small-line-height);
+  color: var(--md-sys-color-on-surface-variant);
+}
+.t-label-large {
+  font-size: var(--md-sys-type-label-large-size);
+  line-height: var(--md-sys-type-label-large-line-height);
+  font-weight: var(--md-sys-type-label-large-weight);
+  letter-spacing: var(--md-sys-type-label-large-tracking);
+}
+.t-label-medium {
+  font-size: var(--md-sys-type-label-medium-size);
+  line-height: var(--md-sys-type-label-medium-line-height);
+  font-weight: 500;
+  letter-spacing: var(--md-sys-type-label-medium-tracking);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* -------------------------------------------------------------------- surfaces */
+
+.m3-surface {
+  background: var(--md-sys-color-surface-container);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-large);
+}
+
+/* Expressive leans on larger, more varied radii than classic M3. */
+.m3-card {
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface);
+  border-radius: var(--md-sys-shape-extra-large);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  overflow: hidden;
+  transition:
+    background var(--md-sys-motion-effects-default),
+    transform var(--md-sys-motion-spatial-default);
+}
+
+.m3-card--interactive {
+  cursor: pointer;
+}
+.m3-card--interactive:hover {
+  background: var(--md-sys-color-surface-container);
+}
+.m3-card--interactive:active {
+  transform: scale(0.995);
+}
+
+/* ---------------------------------------------------------------------- buttons */
+
+.m3-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hh-space-sm);
+  min-height: 48px;
+  padding: 0 var(--hh-space-xl);
+  border: none;
+  border-radius: var(--md-sys-shape-full);
+  background: var(--md-sys-color-primary);
+  color: var(--md-sys-color-on-primary);
+  font-family: inherit;
+  font-size: var(--md-sys-type-label-large-size);
+  font-weight: var(--md-sys-type-label-large-emphasized-weight, 700);
+  letter-spacing: var(--md-sys-type-label-large-tracking);
+  cursor: pointer;
+  transition:
+    background var(--md-sys-motion-effects-default),
+    border-radius var(--md-sys-motion-spatial-fast),
+    transform var(--md-sys-motion-spatial-fast);
+}
+
+/* The shape-morph on press is a signature Expressive behaviour. */
+.m3-button:active:not(:disabled) {
+  border-radius: var(--md-sys-shape-medium);
+  transform: scale(0.97);
+}
+.m3-button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.m3-button--tonal {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.m3-button--text {
+  background: transparent;
+  color: var(--md-sys-color-primary);
+  padding: 0 var(--hh-space-md);
+}
+
+.m3-button--text:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 8%, transparent);
+}
+
+/* ----------------------------------------------------------------------- fields */
+
+.m3-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-xs);
+}
+
+.m3-field > label {
+  font-size: var(--md-sys-type-label-medium-size);
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.m3-field > input {
+  min-height: 56px;
+  padding: 0 var(--hh-space-lg);
+  border-radius: var(--md-sys-shape-medium);
+  border: 1px solid var(--md-sys-color-outline);
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  font-family: inherit;
+  font-size: var(--md-sys-type-body-large-size);
+  transition: border-color var(--md-sys-motion-effects-fast);
+}
+
+.m3-field > input:focus {
+  outline: none;
+  border-color: var(--md-sys-color-primary);
+  border-width: 2px;
+  padding: 0 calc(var(--hh-space-lg) - 1px);
+}
+
+/* -------------------------------------------------------------------- structure */
+
+.m3-app-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hh-space-lg);
+  padding: var(--hh-space-lg) var(--hh-space-xl);
+  background: var(--md-sys-color-surface);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.m3-page {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--hh-space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-lg);
+}
+
+.m3-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--hh-space-md);
+  padding: var(--hh-space-xxxl) var(--hh-space-xl);
+  text-align: center;
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-low);
+  border-radius: var(--md-sys-shape-extra-large);
+}
+
+.m3-error {
+  padding: var(--hh-space-md) var(--hh-space-lg);
+  border-radius: var(--md-sys-shape-medium);
+  background: var(--md-sys-color-error-container);
+  color: var(--md-sys-color-on-error-container);
+}
+
+/* Respect the athlete's motion preference — Expressive motion is emphatic by design. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

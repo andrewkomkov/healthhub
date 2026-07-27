@@ -79,6 +79,7 @@ and 5 web routes.
 | V. Open Source and CI-Enforced | Public GitHub repository, Apache-2.0. GitHub Actions builds and tests Android, type-checks and tests Worker and web, validates `wrangler deploy --dry-run`, and deploys from `main`. | **PASS** |
 | VI. Complete Data Fidelity | This slice ingests workout-domain record types; the ingestion layer is a registry keyed by record type so remaining Health Connect types are added as registry entries. Unknown types are recorded in the sync report rather than dropped. Samples are transferred at full recorded resolution — the downsampled object is an *additional* preview, never a replacement. | **PASS** — with scope note below |
 | VII. Modular by Construction | Android is a Gradle multi-module build: `core:*` modules carry no feature logic; `feature:*` modules never depend on each other; navigation is assembled from `@IntoSet` contributions so a social module can be added without editing existing ones. Web mirrors this with feature-scoped directories over `src/core`. | **PASS** |
+| VIII. Fully ADB-Controllable | `core:devcontrol` (debug source set only) exposes a signature-permission-guarded receiver implementing every user action as a command, a deep link per screen, and a JSON state dump on a stable logcat tag. Feature modules contribute their commands through the same `@IntoSet` mechanism as navigation, so the surface stays complete as modules are added. Absent from release builds. | **PASS** |
 
 **Scope note on Principle VI**: the constitution requires the client to be *able* to ingest
 all 80+ record types. This slice implements the workout-domain subset and the registry
@@ -119,7 +120,8 @@ android/
 │   ├── healthconnect/                  # HC client, permission set, record-type registry
 │   ├── telemetry/                      # columnar codec + on-device metric computation
 │   ├── sync/                           # WorkManager workers, delta engine, upload pipeline
-│   └── network/                        # Worker API client, device token store
+│   ├── network/                        # Worker API client, device token store
+│   └── devcontrol/                     # debug-only ADB command surface + state dump
 └── feature/
     ├── auth/                           # sign-up, sign-in, device registration
     ├── feed/                           # activity feed

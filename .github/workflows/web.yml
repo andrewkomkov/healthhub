@@ -1,0 +1,39 @@
+name: web + worker
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['android/**', 'specs/**', '*.md']
+  pull_request:
+    paths-ignore: ['android/**', 'specs/**', '*.md']
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # The design tokens are generated, not committed: if this step drifts from what the
+      # clients expect, everything downstream fails loudly rather than silently diverging.
+      - name: Generate design tokens
+        run: npm run tokens
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build web
+        run: npm --workspace web run build
+
+      # Catches a broken wrangler.jsonc without deploying anything.
+      - name: Validate Worker deployment config
+        run: npx wrangler deploy --dry-run --config worker/wrangler.jsonc

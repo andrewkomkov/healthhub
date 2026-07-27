@@ -7,7 +7,7 @@ tokens replaced with concrete governance for the HealthHub project.
 
 Modified principles: none (initial adoption)
 Added sections:
-  - Core Principles I–VII
+  - Core Principles I–VIII
   - Technology Constraints
   - Development Workflow & Quality Gates
   - Governance
@@ -159,6 +159,34 @@ core packages, so the two clients stay conceptually aligned.
 Rationale: Social features are explicitly planned but out of scope for the MVP. Deciding
 the seams now costs little; retrofitting them into a shipped monolith costs a rewrite.
 
+### VIII. Fully ADB-Controllable
+
+Every action a user can perform in the Android app MUST also be invocable over ADB, and
+every piece of state the user can see MUST be observable over ADB. No feature may be
+reachable only by touching the screen.
+
+The control surface MUST provide:
+
+- **Navigation** — a deep link for every screen, so any screen can be opened directly with
+  `am start -a android.intent.action.VIEW -d "healthhub://…"`.
+- **Commands** — a broadcast interface covering every user action (sign in, sign out, grant
+  flow entry, trigger sync, cancel sync, rename activity, change settings, clear data), with
+  results reported back as structured output.
+- **Observation** — a command that dumps the current screen's state and the app's key state
+  (auth, sync progress, counts, last error) as structured JSON to logcat under a stable tag,
+  so an automated run can assert on it without screenshots or UI scraping.
+- **Determinism** — every command reports success or failure with a stable exit signal and a
+  correlation id, so scripted sequences can wait for completion rather than sleeping.
+
+This surface MUST be present in debug builds and MUST be absent from release builds. It MUST
+NOT be exported to other applications without a signature-level permission — an unguarded
+exported receiver that triggers sign-in or exposes health data would be a critical
+vulnerability, and shipping one would violate Principle IV.
+
+Rationale: The physical test device is driven over ADB, and the product is developed by an
+agent that cannot tap a screen. A feature that can only be exercised by hand is a feature
+that cannot be verified, and unverifiable features are where regressions live.
+
 ## Technology Constraints
 
 - **Android**: Kotlin, Jetpack Compose, Material 3 Expressive, WorkManager for background
@@ -187,6 +215,8 @@ the seams now costs little; retrofitting them into a shipped monolith costs a re
 - Every feature that adds UI MUST state how it satisfies Principle III.
 - Every feature that adds Android functionality MUST state which Gradle module it lands in
   and MUST NOT introduce a `feature:*` → `feature:*` dependency.
+- Every feature that adds an Android user action or screen MUST ship its ADB command and
+  deep link in the same change, and MUST state the exact `adb` invocation that exercises it.
 - Changes MUST reach `main` through a green GitHub Actions pipeline.
 - Commits MUST follow Conventional Commits 1.0.0.
 

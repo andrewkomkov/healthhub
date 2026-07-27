@@ -1,0 +1,15 @@
+{
+  "name": "@healthhub/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "description": "The single source of truth for HealthHub's Material 3 Expressive design tokens. Generates a CSS custom-property sheet for the web and a Kotlin object for Android, so both clients cannot drift.",
+  "main": "tokens.json",
+  "exports": {
+    ".": "./tokens.json"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}
