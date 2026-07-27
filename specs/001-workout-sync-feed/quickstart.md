@@ -51,6 +51,30 @@ Set the one required secret before the first deploy:
 npx wrangler secret put SESSION_PEPPER   # random 32+ byte string
 ```
 
+### Optional: Auth0 sign-in
+
+HealthHub works without it — local password accounts are always available, so a fork can be
+deployed without registering anywhere. To enable Auth0 as well, create a **Regular Web
+Application** in your tenant (not a SPA — this flow uses a client secret) and set:
+
+| Auth0 setting | Value |
+|---|---|
+| Allowed Callback URLs | `https://<worker>.workers.dev/api/auth/auth0/callback`, `http://localhost:8787/api/auth/auth0/callback` |
+| Allowed Logout URLs | `https://<worker>.workers.dev/` |
+| Allowed Web Origins | `https://<worker>.workers.dev` |
+
+Then upload the three secrets:
+
+```bash
+npx wrangler secret put AUTH0_DOMAIN         # tenant.us.auth0.com
+npx wrangler secret put AUTH0_CLIENT_ID
+npx wrangler secret put AUTH0_CLIENT_SECRET
+```
+
+The sign-in button appears by itself once `GET /api/auth/providers` reports `auth0: true`.
+If the callback URL is not registered, Auth0 answers the redirect with **“Callback URL
+mismatch”** rather than a sign-in page.
+
 ## 4. Build and install the Android app
 
 The test device is the Samsung SM-G780F (Android 13 / API 33), which has Health Connect

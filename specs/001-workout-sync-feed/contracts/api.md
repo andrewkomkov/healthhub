@@ -50,6 +50,37 @@ session cookie on success.
 `401 unauthenticated` on bad credentials — identical response and timing for unknown email
 and wrong password.
 
+### `GET /api/auth/providers`
+
+```jsonc
+{ "password": true, "auth0": true }   // auth0 is false when the deployment has no tenant
+```
+
+Lets a client render only the sign-in methods that are actually configured.
+
+### `GET /api/auth/auth0/login?mode=web|device&deviceName=…`
+
+Starts the OIDC authorization code flow and `302`s to the tenant's `/authorize`. Sets a
+short-lived signed `hh_oauth` cookie carrying the `state`, `nonce` and mode.
+
+`mode=device` is how Android signs in: the app opens this in a Custom Tab, so the client
+secret stays in the Worker and the athlete's password never passes through the app.
+
+`404 not_found` when Auth0 is not configured for the deployment.
+
+### `GET /api/auth/auth0/callback?code=&state=`
+
+Verifies `state` against the cookie, exchanges the code for an `id_token` using the client
+secret, verifies the token's RS256 signature against the tenant JWKS plus issuer, audience,
+expiry and nonce, then resolves the identity to an account:
+
+1. a known `(auth0, sub)` identity → that account;
+2. otherwise a **verified** email matching an existing account → linked to it;
+3. otherwise a new account, with the sentinel password hash `external`.
+
+Finishes by setting the session cookie and redirecting to `/` (web), or by redirecting to
+`healthhub://auth/callback?token=<device_token>&device=<id>` (device).
+
 ### `POST /api/auth/logout` → `204`
 
 Deletes the session row.

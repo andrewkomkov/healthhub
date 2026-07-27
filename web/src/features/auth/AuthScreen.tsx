@@ -1,13 +1,21 @@
-import { useState, type FormEvent } from 'react'
-import { api, ApiFailure, type User } from '../../core/api/client'
+import { useEffect, useState, type FormEvent } from 'react'
+import { api, ApiFailure, type Providers, type User } from '../../core/api/client'
 
 export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void }) {
+  const [providers, setProviders] = useState<Providers>({ password: true, auth0: false })
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    api
+      .providers()
+      .then(setProviders)
+      .catch(() => undefined)
+  }, [])
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -36,6 +44,35 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
           Your Health Connect data, properly.
         </p>
       </header>
+
+      {providers.auth0 && (
+        <>
+          {/* A full page navigation, not fetch: the provider redirect has to happen at the
+              top level for the state cookie and the return trip to work. */}
+          <button
+            className="m3-button"
+            type="button"
+            onClick={() => {
+              window.location.href = '/api/auth/auth0/login'
+            }}
+          >
+            Continue with Auth0
+          </button>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'var(--hh-space-md)',
+              color: 'var(--md-sys-color-on-surface-variant)',
+            }}
+          >
+            <hr style={{ flex: 1, border: 0, borderTop: '1px solid var(--md-sys-color-outline-variant)' }} />
+            <span className="t-label-medium">or use a password</span>
+            <hr style={{ flex: 1, border: 0, borderTop: '1px solid var(--md-sys-color-outline-variant)' }} />
+          </div>
+        </>
+      )}
 
       <form
         onSubmit={submit}

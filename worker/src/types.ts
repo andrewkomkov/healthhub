@@ -8,6 +8,15 @@ export interface Bindings {
   ASSETS: Fetcher
   /** Extra secret mixed into token hashing. Set with `wrangler secret put SESSION_PEPPER`. */
   SESSION_PEPPER?: string
+
+  /**
+   * Auth0 is an optional identity provider. When these three are absent the Auth0 routes
+   * return 404 and local password accounts are the only way in, so a fork can be deployed
+   * without registering a tenant.
+   */
+  AUTH0_DOMAIN?: string
+  AUTH0_CLIENT_ID?: string
+  AUTH0_CLIENT_SECRET?: string
 }
 
 /** Who the current request belongs to, established by the auth middleware. */

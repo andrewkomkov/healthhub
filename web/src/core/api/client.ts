@@ -114,7 +114,15 @@ export interface ActivityDetail extends FeedActivity {
 
 /* ------------------------------------------------------------------------- api */
 
+export interface Providers {
+  password: boolean
+  auth0: boolean
+}
+
 export const api = {
+  /** Which sign-in methods this deployment actually has configured. */
+  providers: () => request<Providers>('/auth/providers'),
+
   register: (email: string, password: string, displayName: string) =>
     request<{ user: User }>('/auth/register', {
       method: 'POST',
