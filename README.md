@@ -61,7 +61,9 @@ npx wrangler r2 bucket create healthhub-data
 npm install && npm run build && npx wrangler deploy
 
 cd android && ./gradlew :app:assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
+# --user 0, and never -g: a second profile hides the data, and pre-granting breaks the
+# in-app permission request outright. See docs/AGENT-NOTES.md.
+adb install --user 0 -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## Development

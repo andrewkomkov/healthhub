@@ -323,9 +323,19 @@ including within charts.
 - **SC-010**: Every screen on both clients renders correctly in light and dark appearance,
   with no surface falling back to a foreign palette — verified screen by screen.
 - **SC-011**: Text and essential graphics meet standard contrast expectations on all
-  screens, including charts.
+  screens, including charts — 4.5:1 for text, 3:1 for graphics that carry meaning, in both
+  appearances. Measured over the token palette by `web/src/core/m3e/contrast.test.ts`, which
+  also records the two places the palette cannot meet it and what stands in instead: three
+  slots of the light series palette fall below 3:1, and two pairs of the dark one are
+  indistinguishable under simulated protanopia and deuteranopia. Both are covered by the
+  relief rule — every channel is directly labelled and carries its own value readout, so
+  colour is never the only thing telling two series apart. Screen-by-screen verification with
+  a real screen reader is still outstanding.
 - **SC-012**: A new capability area can be added to the Android app without modifying source
-  files belonging to existing capability areas — demonstrated by adding one.
+  files belonging to existing capability areas — demonstrated by adding one. The cost of
+  attaching one is fixed and lives entirely outside the feature layer: a destination declared
+  in `core:navigation`, an `include` in `settings.gradle.kts`, and one dependency line in
+  `:app`. No existing `feature:*` module is read or edited.
 
 ## Assumptions
 

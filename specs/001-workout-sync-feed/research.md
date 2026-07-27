@@ -107,8 +107,9 @@ server-side rasterisation.
 
 ## R-006 — Authentication: opaque tokens in D1
 
-**Decision**: Passwords are hashed with PBKDF2-SHA-256 via WebCrypto (100,000 iterations,
-per-user random salt).
+**Decision**: Passwords are hashed with PBKDF2-SHA-256 via WebCrypto — 600,000 iterations on
+the athlete's device over an address-derived salt, then 100,000 more in the Worker over a
+per-user random salt. The two amendments below are how it got that shape.
 
 **Amended after deployment**: the original figure was 600,000. The Workers runtime rejects it
 outright — `Pbkdf2 failed: iteration counts above 100000 are not supported` — so 100,000 is
@@ -117,12 +118,63 @@ route, not by reading documentation; the local `workerd` dev runtime does not en
 limit, so it passes locally and fails in production. Worth remembering for anything else
 crypto-related.
 
-The encoded hash embeds its own iteration count, so the parameters can be raised later
-without invalidating stored passwords. The way to buy more work without spending Worker CPU
-is a **client-side pre-hash** — the browser and the phone run a high-iteration KDF and send
-the result, which the Worker then salts and hashes at 100,000. That also fits Principle I,
-since the expensive part runs on the athlete's device. It is queued as a hardening task
-rather than done now, because it has to be implemented identically in three places. Web sessions are opaque random tokens in an `HttpOnly`, `Secure`,
+**Amended again (session 6): the KDF is split across two machines.** The ceiling is not
+negotiable, so the work has to come from somewhere that has no ceiling — the athlete's device.
+The browser and the phone run PBKDF2-SHA-256 at **600,000** iterations, exactly the figure this
+decision originally specified, and send the 32-byte result. The Worker salts *that* with a
+per-user random salt and hashes it at its own 100,000. Total work is the sum, and neither half
+is sufficient alone. Without the client's pass, total work stays capped at whatever the runtime
+permits. Without the Worker's, the stored value *is* the thing a client sends, so a leaked
+database would be a list of working credentials rather than something an attacker still has to
+spend 700,000 iterations per guess on. It also fits Principle I better than the original — the
+expensive part now runs where every other expensive part runs.
+
+What the pre-hash does **not** buy: a proof is still password-equivalent *on the wire*, because
+anything that can be replayed to sign in is. TLS is what protects it, exactly as before. What
+changed is that the Worker no longer holds the password itself even momentarily, and that the
+per-guess cost against a stolen table went up sevenfold.
+
+**The client's salt is derived from the address**, `SHA-256("healthhub/password/v1\n" +
+email.trim().toLowerCase())`, not random. Sign-in has to reproduce the salt *before* the server
+has said anything, and any endpoint that hands out an account's KDF parameters is an account
+enumeration oracle — the exact property `POST /api/auth/login` is written to avoid. A derived
+salt still gives two athletes who chose the same password different proofs. The cost is a
+coupling worth writing down: **an account's address is part of its password derivation**, so
+changing an address would invalidate the proof. `PATCH /api/auth/me` accepts `displayName` and
+`unitSystem` and no address, and that is now load-bearing rather than incidental.
+
+**The migration path, which is the part that had to be designed rather than chosen.** A record
+written before this amendment is `PBKDF2(password, salt, 100k)`; a proof is
+`PBKDF2(password, derivedSalt, 600k)`. Neither can be computed from the other, so an existing
+account cannot be converted server-side and cannot be opened by a proof. The record therefore
+carries the name of the scheme it was built from — a fifth `$`-separated segment, absent on
+every row written before the amendment, which is what makes those rows *identifiable* rather
+than merely old. Sign-in offers both credentials in one request; the record chooses which one
+counts; a success against the weaker scheme rewrites the row under the stronger one in the same
+request. After one sign-in per account the `password` field is dead weight and comes out of
+`POST /api/auth/login` in all three clients.
+
+**Rejected for the migration**: a *prelogin endpoint* returning the account's scheme, the way
+Bitwarden does it. One request instead of two, and it removes the need to send the password at
+all — but it answers "does this address have an account, and how old is it" to anyone who asks,
+and every mitigation for that is a deterministic fake answer that has to be maintained forever.
+Also rejected: *invalidating old passwords and mailing a reset*, which is a worse outcome than
+the problem, and *keeping the old accounts on the old scheme indefinitely*, which leaves the
+weakest records in the database with nothing scheduled to remove them.
+
+**One rule genuinely moved to the client**: the ten-character minimum. The Worker is handed a
+fixed-width digest and cannot measure what produced it, so `AuthScreen` on both clients now
+keeps the rule and `contracts/api.md` says so. A hostile client can register a one-character
+password; it harms only that account, and no server-side check can exist without the server
+seeing the password, which is the thing being given up.
+
+**And the derivation now exists twice**, in TypeScript and Kotlin, which is exactly the shape
+SC-008 exists to catch — except that here a drift does not merely disagree on a number, it locks
+an athlete out of their own account on their other client. `fixtures/auth/prehash-v1.json` pins
+the vectors and both sides assert against it. The Worker cannot arbitrate: 600,000 iterations is
+six times the ceiling workerd enforces, so it could not compute a vector if it wanted to.
+
+Web sessions are opaque random tokens in an `HttpOnly`, `Secure`,
 `SameSite=Lax` cookie, stored in D1. Devices hold a separate long-lived opaque device token,
 also a D1 row, revocable individually.
 
@@ -282,6 +334,59 @@ u/{user_id}/archive/samples/year=2026/month=07/part-0001.parquet      # long-for
   GROUP BY sport;
   ```
 
+**Amendment (dependency evaluation, session 5 groundwork)**: the writer is
+`hyparquet-writer` — pure ESM, one dependency, and it bundles for workerd through its
+`browser` export condition with no Node built-in anywhere. Every alternative examined fails
+on the runtime rather than on the format: `@dsnp/parquetjs` depends on `thrift`, `@zenfs/core`
+and the AWS S3 client; the original `parquetjs` wants `fs` and Node streams; `parquet-wasm`
+would spend most of a Worker's script budget on the binary.
+
+It ships **only a snappy compressor**, and workerd has no native zstd — `CompressionStream`
+covers gzip and deflate. So "Parquet + zstd" above is achievable only by supplying a zstd
+compressor to the writer, and asking for `codec: 'ZSTD'` without one silently writes
+uncompressed pages labelled ZSTD, which no reader can open. Snappy is a legitimate landing
+point: DuckDB, ClickHouse and Polars all read it, it is splittable, and the ratio difference
+on numeric columns is a fraction of what partition pruning already saves. Session 5 owns the
+call and must make it explicitly.
+
+**Amendment (session 5, built): the codec is SNAPPY.** Two independent reasons, both
+verified in workerd rather than assumed:
+
+- `new CompressionStream('zstd')` throws *"The compression format must be either 'deflate',
+  'deflate-raw' or 'gzip'"*. There is no zstd in the runtime to borrow.
+- `hyparquet-writer`'s `Compressor` is `(bytes) => bytes`, **synchronous**. Every compression
+  primitive workerd exposes is an asynchronous stream, so even gzip could not be plugged in
+  without a pure-JS implementation. Adding one to ship a better ratio on files measured in
+  kilobytes is not a trade worth making.
+
+The two other numbers in this decision also moved, and for the same kind of reason — the
+playbook was written for a workload with more data in it than this one has:
+
+- **128–512 MB parts do not occur.** One row per activity is roughly 150 bytes encoded, so a
+  heavy month is a few hundred kilobytes. The cut is set at 50 000 rows as a *memory* bound —
+  a part is built in an isolate with a 128 MB ceiling, so a 512 MB part could not be produced
+  here at all. The small-files problem the target defends against needs thousands of objects
+  per query; a year of history is twelve.
+- **Multipart upload is implemented and dormant.** `worker/src/archive/upload.ts` switches to
+  multipart above 100 MB in 8 MB parts, and nothing the activities dataset produces reaches
+  it. It is tested at R2's own 5 MiB part minimum, which is what a 128 MB isolate can hold.
+
+**The `samples` dataset is not produced by the Worker, and cannot be.** Assembling long-format
+samples means decoding `.hht` objects, which is exactly the analysis Principle I keeps out of
+the edge — and a five-hour ride would not fit in the isolate anyway. The prefix stays reserved
+in data-model.md; the natural producer is the device that already holds the samples in memory,
+uploading Parquet parts the way it uploads telemetry today. Nothing about the layout has to
+change for that to happen later.
+
+**What replaces "atomic" in practice.** R2 has no multi-object transaction, so a month that
+genuinely spans several parts cannot be swapped atomically for a reader globbing the prefix.
+The build therefore (1) deletes every object under the month that the new build will not
+produce, (2) writes the new parts over the stable `part-NNNN` names, (3) flips a D1 manifest
+of live parts in a single batch. Deleting first makes the transient state an *undercount* the
+next nightly run repairs, never an overcount nobody notices; the manifest, served by
+`GET /api/archive`, is exact at every instant for a reader that asks. At realistic volumes a
+month is one part and step 2 is a single atomic PUT, so the window does not arise.
+
 **Explicitly deferred**: Iceberg and Delta Lake. They buy ACID, schema evolution and time
 travel over an append-only, single-writer, immutable dataset that has none of those problems.
 The partitioned-Parquet layout is a strict subset of an Iceberg table, so adopting Iceberg
@@ -339,6 +444,36 @@ the heavy lifting, so a "distance by sport across 2026" query touches a few mega
 **Kept from the proposal**: R2 Event Notifications are a good fit for triggering compaction
 when new activities land, and are recorded as an option for the archive job.
 
+**Amendment (dependency evaluation, session 5 groundwork)**: `@duckdb/duckdb-wasm` is
+installed in the web workspace and pinned to `^1.32.0`. The range matters — the package's
+`latest` dist-tag points at a `1.33.1-devNN` prerelease, and a caret range over a stable
+version deliberately does not match it. It is a dependency of `web`, not of `worker`, and it
+must stay behind a dynamic `import()` so it never enters the feed's first chunk.
+
+**Amendment (session 5 step 4, as built)**: the decision stands and the transport does not.
+This entry said the page would read through "the ownership-checked proxy already built for
+`.hht`". It does not: `web/src/core/analytics/session.ts` hands DuckDB the scoped, read-only,
+one-hour credentials from `POST /api/archive/credentials` and the engine signs its own range
+requests straight at R2. The claim the proxy was protecting — that no long-lived S3 credential
+exists anywhere — still holds, and the athlete's history no longer passes through the Worker at
+all. Three things the implementation had to be shaped around, none of which were known when
+this was written:
+
+- **The Wasm binary cannot be bundled.** 34 MB and 39 MB against a 25 MiB Workers asset cap,
+  so the bundle URL is resolved at run time — `VITE_DUCKDB_BUNDLE_BASE`, or the library's own
+  jsDelivr URLs — and `duckdb.createWorker(url)` is what makes a cross-origin worker legal.
+- **There is no httpfs.** DuckDB-Wasm ships its own S3 filesystem in JS with five settings and
+  no more; `SET s3_url_style` and `SET s3_use_ssl` throw and abort the connection. Buckets are
+  therefore addressed virtual-host style, always.
+- **It cannot list a bucket**, so `read_parquet('s3://…/*.parquet')` matches nothing and every
+  part must be named. That is what makes `parts` in `GET /api/archive` load-bearing rather
+  than a convenience.
+
+Queries are built from `DESCRIBE` rather than from a hard-coded schema (`analytics/fields.ts`),
+because the archive's spelling is the compaction job's to change; and every total filters on
+`visibility = 'active'`, because the archive keeps the duplicate recordings the feed set aside
+and a sum without it counts one ride once per app that recorded it.
+
 **Reconsider if**: a future feature needs cross-athlete aggregation (leaderboards, segment
 rankings for the planned social modules). That genuinely cannot run on one athlete's device,
 and at that point a Worker-side query engine — or a scheduled job writing precomputed
@@ -366,6 +501,43 @@ per-activity consent that the platform does not let any app bypass.
 **Also observed**: on the test device the writing apps are Google Fit and a bike-computer
 app, and their sessions carry aggregates rather than tracks — so some activities would have
 no route to import even with consent. Worth confirming per source before promising maps.
+
+**Implemented in session 3**, with three findings that changed the shape of the decision.
+
+*The intent is not built by hand.* `android.health.connect.action.REQUEST_EXERCISE_ROUTE`
+exists only from API 34; where Health Connect is still an installed APK — one of the two test
+devices — the request travels over the SDK's own service instead, and a hand-built intent
+resolves to nothing without an error. `ExerciseRouteRequestContract` chooses the road, and
+`core:healthconnect/ExerciseRouteContract.kt` wraps it so no screen imports a Health Connect
+type to ask for a track.
+
+*"No route" and "not allowed to read the route" are different answers, and the contract cannot
+tell them apart* — it returns `null` for a dismissal and for an empty result alike. What can is
+the session, read before anything is asked: `exerciseRouteResult` is `ConsentRequired` when a
+track exists and `NoData` when the recording app wrote no positions. Presenting the second as a
+permission problem sends the athlete looking for a switch the platform does not have, so the
+distinction is carried all the way to the screen as separate states.
+
+*A route arrives after the fact, so ingest has to be re-runnable.* `SyncEngine.importRoute`
+re-reads the session, re-reads its window, recomputes the duplicate verdict and calls the same
+`ingest` a sync calls — the polyline, bounds, distance, splits and both `.hht` objects are
+produced by one implementation. Two consequences follow. Telemetry is **no longer immutable**
+and is served `private, max-age=0, must-revalidate` (see contracts/api.md). And a track is no
+longer allowed to become the activity's distance unchallenged: an imported route covers what
+*its* recorder covered, so `Metrics.reconcileDistance` checks both it and the source's own
+aggregate against average speed over elapsed time, and takes whichever falls inside the same
+`0.8–1.25` band the detail screens use. Preferring the track blindly shrinks a ride exactly as
+badly as summing across sources inflates one. Where there is no speed channel to check against —
+a recording with a distance aggregate and nothing else, which is common and is where a partial
+track is most likely — the two candidates are compared to each other over that band instead, and
+the source's own aggregate wins any disagreement, because it is the recording app's claim about
+the whole of its own session. The verdict carries `DistanceAgreement.UNKNOWN` in that case and
+the screen says so rather than presenting an unchecked figure as confirmed.
+
+**Still open**: an archived duplicate cannot have a route imported onto it. The upload carries
+the duplicate verdict, and `GET /api/activities/:id` returns neither `sourceUid` nor
+`duplicateOf`, so the screen refuses rather than risk putting a set-aside recording back in the
+feed. Returning both fields on the detail route is the fix.
 
 ## Open risks
 
