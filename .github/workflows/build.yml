@@ -18,7 +18,9 @@ jobs:
     name: SonarQube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      # Actions are pinned by commit SHA rather than tag: a tag can be moved, and this job
+      # is handed a token.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           # Shallow clones weaken the relevancy of the analysis — Sonar uses history to
           # attribute issues to the change that introduced them.
@@ -32,6 +34,6 @@ jobs:
       - run: node packages/design-tokens/build.mjs
 
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@v8.1.0
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
