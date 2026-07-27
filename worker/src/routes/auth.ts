@@ -14,7 +14,15 @@ import {
   STATE_COOKIE,
   stateCookie,
 } from '../auth/oauthstate'
-import { hashPassword, verifyPassword } from '../auth/password'
+import {
+  CLIENT_SCHEMES,
+  decoyRecord,
+  hashCredential,
+  isProofValue,
+  PLAIN_SCHEME,
+  type Proof,
+  verifyCredential,
+} from '../auth/password'
 import {
   clearedSessionCookie,
   generateToken,
@@ -27,9 +35,56 @@ import {
 import { fail } from '../lib/errors'
 import { authenticate } from '../lib/guard'
 import { AUTH_LIMIT, clientIp, enforce } from '../lib/ratelimit'
-import { email, jsonBody, normalizeEmail, oneOf, optionalStr, str } from '../lib/validate'
+import { arr, email, jsonBody, normalizeEmail, oneOf, optionalStr, str } from '../lib/validate'
 
 const MIN_PASSWORD = 10
+const MAX_PROOFS = 4
+
+/**
+ * Reads whatever credential material the request offered.
+ *
+ * Two fields, either or both: `password` is the athlete's actual password, and
+ * `passwordProofs` carries what a client-side KDF produced from it (R-006 amendment). An
+ * up-to-date client sends only a proof when registering, and both when signing in — the raw
+ * password is the only thing that can verify an account created before the amendment, and
+ * sending it alongside the proof is what lets that account be migrated on the way through.
+ *
+ * The length minimum can only be enforced on a password the Worker can see. A proof is a
+ * fixed-width digest, so on the pre-hashed path the rule is the client's to keep; that is the
+ * price of the Worker never seeing the password, and it is stated in contracts/api.md.
+ */
+function credential(body: Record<string, unknown>, minLength: number): Proof[] {
+  const proofs: Proof[] = []
+
+  for (const entry of arr(body, 'passwordProofs', MAX_PROOFS)) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+      fail('validation_failed', 'Every "passwordProofs" entry must be an object.')
+    }
+    const row = entry as Record<string, unknown>
+    const scheme = str(row, 'scheme', { max: 64 })
+    if (!CLIENT_SCHEMES.includes(scheme)) {
+      fail('validation_failed', `This deployment does not accept the "${scheme}" password scheme.`)
+    }
+    if (proofs.some((proof) => proof.scheme === scheme)) {
+      fail('validation_failed', 'Each password scheme may appear once.')
+    }
+    const value = str(row, 'value', { max: 512 })
+    if (!isProofValue(value)) {
+      fail('validation_failed', 'A password proof must be 32 base64-encoded bytes.')
+    }
+    proofs.push({ scheme, value })
+  }
+
+  if (body['password'] !== undefined) {
+    const password = str(body, 'password', { min: minLength, max: 512 })
+    proofs.push({ scheme: PLAIN_SCHEME, value: password })
+  }
+
+  if (proofs.length === 0) {
+    fail('validation_failed', 'A password is required.')
+  }
+  return proofs
+}
 
 interface UserRow {
   id: string
@@ -69,7 +124,7 @@ export const authRoutes = new Hono<AppEnv>()
 
     const body = await jsonBody(c.req.raw)
     const address = email(body)
-    const password = str(body, 'password', { min: MIN_PASSWORD, max: 512 })
+    const proofs = credential(body, MIN_PASSWORD)
     const displayName = str(body, 'displayName', { max: 80 })
     const norm = normalizeEmail(address)
 
@@ -83,7 +138,7 @@ export const authRoutes = new Hono<AppEnv>()
       `INSERT INTO users (id, email, email_norm, password_hash, display_name, created_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
     )
-      .bind(id, address, norm, await hashPassword(password), displayName, Date.now())
+      .bind(id, address, norm, await hashCredential(proofs), displayName, Date.now())
       .run()
 
     const token = await startSession(
@@ -104,7 +159,7 @@ export const authRoutes = new Hono<AppEnv>()
 
     const body = await jsonBody(c.req.raw)
     const address = email(body)
-    const password = str(body, 'password', { min: 1, max: 512 })
+    const proofs = credential(body, 1)
 
     const row = await c.env.DB.prepare(
       `SELECT id, email, display_name, unit_system, password_hash
@@ -114,10 +169,26 @@ export const authRoutes = new Hono<AppEnv>()
       .first<UserRow & { password_hash: string }>()
 
     // Hash even when the account is unknown, so a missing account and a wrong password
-    // cost the same time and return the same response.
-    const stored = row?.password_hash ?? (await hashPassword(crypto.randomUUID()))
-    const ok = await verifyPassword(password, stored)
-    if (!row || !ok) fail('unauthenticated', 'Incorrect email or password.')
+    // cost the same time and return the same response. The decoy is built under the same
+    // scheme the request offered, or the two paths do different amounts of work.
+    const stored = row?.password_hash ?? (await decoyRecord(proofs))
+    const verified = await verifyCredential(proofs, stored)
+    if (!row || !verified.ok) fail('unauthenticated', 'Incorrect email or password.')
+
+    // The migration, and the only place it happens: an account whose record predates the
+    // client-side pre-hash is rewritten under the stronger scheme the moment its owner signs
+    // in with a client that can produce one. Nothing is invalidated and nobody is asked to
+    // reset anything.
+    //
+    // A failed rewrite is swallowed on purpose. The credential has already been verified, the
+    // old record still works, and the next sign-in tries again — turning a bookkeeping write
+    // into a 500 would lock the athlete out of an account whose password is correct.
+    if (verified.upgraded) {
+      await c.env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        .bind(verified.upgraded, row.id)
+        .run()
+        .catch(() => undefined)
+    }
 
     const token = await startSession(
       c.env.DB,
@@ -223,6 +294,17 @@ export const authRoutes = new Hono<AppEnv>()
         )
         .bind(userId),
       db.prepare('DELETE FROM activities WHERE user_id = ?').bind(userId),
+      db.prepare('DELETE FROM health_measurements WHERE user_id = ?').bind(userId),
+      // The nights' hypnograms went with the u/{user_id}/ prefix sweep above; R2 has no
+      // cascade, so the object side of every class has to be named somewhere.
+      db.prepare('DELETE FROM sleep_sessions WHERE user_id = ?').bind(userId),
+      db.prepare('DELETE FROM source_preferences WHERE user_id = ?').bind(userId),
+      // The Parquet parts went with the prefix sweep; these are the rows that said where
+      // they were. An archive_months row left behind would make the next nightly compaction
+      // think a month it has never heard of needs tidying up.
+      db.prepare('DELETE FROM archive_parts WHERE user_id = ?').bind(userId),
+      db.prepare('DELETE FROM archive_months WHERE user_id = ?').bind(userId),
+      db.prepare('DELETE FROM archive_credentials WHERE user_id = ?').bind(userId),
       db.prepare('DELETE FROM privacy_zones WHERE user_id = ?').bind(userId),
       db.prepare('DELETE FROM devices WHERE user_id = ?').bind(userId),
       db.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userId),

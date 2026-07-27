@@ -1,5 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiFailure, type Providers, type User } from '../../core/api/client'
+import { passwordProof } from './prehash'
+
+/**
+ * The Worker cannot check this any more: it is handed a fixed-width digest, not a password.
+ * The rule still exists — it is stated in contracts/api.md — and this is now the only place
+ * on the web side that keeps it.
+ */
+const MIN_PASSWORD = 10
 
 export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void }) {
   const [providers, setProviders] = useState<Providers>({ password: true, auth0: false })
@@ -19,13 +27,20 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    if (mode === 'register' && password.length < MIN_PASSWORD) {
+      setError(`Choose a password of at least ${MIN_PASSWORD} characters.`)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
+      // Several hundred milliseconds of PBKDF2 before the request is even built — the busy
+      // state above covers it, and it is the point rather than an overhead.
+      const proofs = [await passwordProof(email, password)]
       const result =
         mode === 'login'
-          ? await api.login(email, password)
-          : await api.register(email, password, displayName)
+          ? await api.login(email, password, proofs)
+          : await api.register(email, displayName, proofs)
       onSignedIn(result.user)
     } catch (failure) {
       setError(
@@ -111,11 +126,11 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            minLength={mode === 'register' ? 10 : undefined}
+            minLength={mode === 'register' ? MIN_PASSWORD : undefined}
             required
           />
           {mode === 'register' && (
-            <span className="t-body-small">At least 10 characters.</span>
+            <span className="t-body-small">At least {MIN_PASSWORD} characters.</span>
           )}
         </div>
 
