@@ -345,6 +345,28 @@ and at that point a Worker-side query engine — or a scheduled job writing prec
 leaderboard rows into D1 — becomes the right call. It is not needed for anything in this
 specification.
 
+## R-015 — GPS routes are not obtainable in bulk
+
+**Finding**: `android.permission.health.READ_EXERCISE_ROUTE` is declared by the platform with
+`prot=signature`, owned by `com.google.android.healthconnect.controller`. Only code signed
+with Google's key can hold it. There is no plural `READ_EXERCISE_ROUTES` on the device at
+all. Requesting it in the permission set produced a permission that could never be granted
+and that then sat in every sync report as an unmet requirement.
+
+**Decision**: drop it from the manifest and the permission set. Obtain routes the way a
+third-party app actually can — `android.health.connect.action.REQUEST_EXERCISE_ROUTE` with a
+session id, which asks the athlete about **one named workout** and returns that track once.
+
+**Consequence for the specification**: FR-017's "activities with GPS render their route"
+holds, but the route arrives per activity on the detail screen ("Import route") rather than
+automatically during sync. SC-002's fidelity claim is unaffected — every sample Health
+Connect will give us is still ingested; the tracks are simply gated behind an explicit,
+per-activity consent that the platform does not let any app bypass.
+
+**Also observed**: on the test device the writing apps are Google Fit and a bike-computer
+app, and their sessions carry aggregates rather than tracks — so some activities would have
+no route to import even with consent. Worth confirming per source before promising maps.
+
 ## Open risks
 
 | Risk | Impact | Mitigation |

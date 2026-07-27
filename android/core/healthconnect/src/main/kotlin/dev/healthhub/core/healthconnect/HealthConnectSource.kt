@@ -61,11 +61,15 @@ class HealthConnectSource @Inject constructor(
         // athlete's existing workout history would be invisible (SC-002).
         add(HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY)
         addAll(WORKOUT_RECORD_TYPES.map { HealthPermission.getReadPermission(it) })
-        // The route permission has no constant in the SDK — only the write side does — so the
-        // platform string is used directly. Without it, sessions arrive with no GPS track at
-        // all, and it is the one permission `adb install -g` cannot pre-grant: the athlete
-        // has to allow location history explicitly.
-        add(READ_EXERCISE_ROUTE)
+        // Note what is NOT here: android.permission.health.READ_EXERCISE_ROUTE.
+        //
+        // It exists on the platform, but `dumpsys package permission` reports it as
+        // `prot=signature`, owned by com.google.android.healthconnect.controller — so only
+        // code signed with Google's key can ever hold it. There is no plural
+        // READ_EXERCISE_ROUTES on this platform either. Requesting it produced a permission
+        // that could never be granted, which then sat in the sync report forever as an
+        // unmet requirement. See routesAvailableFor / requestRouteIntent below for the path
+        // that is actually open to third-party apps.
     }
 
     suspend fun grantedPermissions(): Set<String> =
@@ -134,11 +138,27 @@ class HealthConnectSource @Inject constructor(
         return results
     }
 
+    /**
+     * The only route access open to a third-party app.
+     *
+     * Health Connect does not hand out bulk GPS access: `READ_EXERCISE_ROUTE` is
+     * signature-level and reserved for Google's own Health Connect app. What an app like this
+     * one can do is ask for **one specific session's route**, which shows the athlete a
+     * confirmation naming that workout, and returns the track once.
+     *
+     * That is a per-activity action rather than a sync-wide permission, so it belongs on the
+     * activity detail screen ("Import route"), not in the permission set.
+     */
+    fun requestRouteIntent(sessionId: String) = android.content.Intent(ACTION_REQUEST_EXERCISE_ROUTE)
+        .putExtra(EXTRA_SESSION_ID, sessionId)
+
     companion object {
         private const val PAGE_SIZE = 1000
 
-        /** Reading GPS tracks. Declared in the manifest; no SDK constant exists for it. */
-        const val READ_EXERCISE_ROUTE = "android.permission.health.READ_EXERCISE_ROUTE"
+        /** Platform action for requesting a single session's route. */
+        const val ACTION_REQUEST_EXERCISE_ROUTE =
+            "android.health.connect.action.REQUEST_EXERCISE_ROUTE"
+        const val EXTRA_SESSION_ID = "android.health.connect.extra.SESSION_ID"
 
         /**
          * The workout-domain registry. Adding a type here is all it takes for the sync engine

@@ -11,7 +11,11 @@
       requested pre-emptively.
     -->
     <uses-permission android:name="android.permission.health.READ_EXERCISE" />
-    <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTE" />
+    <!--
+      READ_EXERCISE_ROUTE is deliberately absent: the platform declares it prot=signature,
+      owned by com.google.android.healthconnect.controller, so no third-party app can hold
+      it. Routes are obtained per activity via REQUEST_EXERCISE_ROUTE instead.
+    -->
     <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
     <uses-permission android:name="android.permission.health.READ_SPEED" />
     <uses-permission android:name="android.permission.health.READ_POWER" />
