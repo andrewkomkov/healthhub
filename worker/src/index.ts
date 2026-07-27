@@ -1,9 +1,12 @@
 import { Hono } from 'hono'
-import type { AppEnv } from './types'
+import type { AppEnv, Bindings } from './types'
+import { compactArchive } from './archive/compaction'
 import { notFound, onError } from './lib/errors'
+import { archiveRoutes } from './routes/archive'
 import { authRoutes } from './routes/auth'
 import { activityRoutes } from './routes/activities'
 import { deviceRoutes } from './routes/devices'
+import { healthRecordRoutes } from './routes/health-records'
 import { sourceRoutes } from './routes/sources'
 import { syncRoutes } from './routes/sync'
 import { telemetryRoutes } from './routes/telemetry'
@@ -45,8 +48,40 @@ app.route('/api/activities', telemetryRoutes)
 app.route('/api/sync', syncRoutes)
 app.route('/api/sources', sourceRoutes)
 app.route('/api/theme', themeRoutes)
+app.route('/api/health-records', healthRecordRoutes)
+app.route('/api/archive', archiveRoutes)
 
 app.notFound(notFound)
 app.onError(onError)
 
-export default app
+/**
+ * Rolls closed months into the analytical Parquet tier (R-013).
+ *
+ * Runs daily rather than monthly on purpose: a backfill can land activities in a month that
+ * was already compacted, and re-running a month replaces its parts atomically, so a job that
+ * mostly finds nothing to do is cheaper than a month-long window in which the archive is
+ * wrong. Compaction is file assembly — it concatenates rows the phone already computed and
+ * never aggregates, which is what keeps Principle I intact with a query engine in the picture.
+ *
+ * A run that finds nothing logs one line and costs one query; the interesting case is the
+ * report, which is the only record of what the job did — nobody is watching at 04:00 UTC.
+ */
+async function scheduled(
+  controller: ScheduledController,
+  env: Bindings,
+  _ctx: ExecutionContext,
+): Promise<void> {
+  const report = await compactArchive(env, { now: controller.scheduledTime })
+  console.log('archive compaction', {
+    cron: controller.cron,
+    durationMs: report.finishedAt - report.startedAt,
+    candidates: report.candidates,
+    unchanged: report.unchanged,
+    deferred: report.deferred,
+    compacted: report.compacted,
+    emptied: report.emptied,
+    failures: report.failures,
+  })
+}
+
+export default { fetch: app.fetch, scheduled }

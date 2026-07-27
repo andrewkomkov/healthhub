@@ -17,6 +17,21 @@ export interface Bindings {
   AUTH0_DOMAIN?: string
   AUTH0_CLIENT_ID?: string
   AUTH0_CLIENT_SECRET?: string
+
+  /**
+   * Scoped R2 credentials for the analytical tier are also optional. Without them compaction
+   * still runs and the archive is still written — only the "give me a key for my own prefix"
+   * endpoint disappears, so a fork that has not created an R2 API token loses nothing else.
+   *
+   * `R2_API_TOKEN` needs exactly one permission: Workers R2 Storage → Edit, on this account.
+   * `R2_PARENT_ACCESS_KEY_ID` is the access key id the temporary credentials descend from;
+   * its secret never has to reach the Worker.
+   */
+  CF_ACCOUNT_ID?: string
+  R2_API_TOKEN?: string
+  R2_PARENT_ACCESS_KEY_ID?: string
+  /** The bucket behind `BLOBS`. A Worker cannot read a binding's bucket name at runtime. */
+  R2_BUCKET_NAME?: string
 }
 
 /** Who the current request belongs to, established by the auth middleware. */

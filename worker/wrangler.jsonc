@@ -33,6 +33,13 @@
     }
   ],
 
+  // Analytical-tier compaction (R-013). Daily at 04:00 UTC, not monthly: a backfill can add
+  // activities to a month that was already compacted, and re-running a month replaces its
+  // parts atomically, so the cheap fix is to look every day.
+  "triggers": {
+    "crons": ["0 4 * * *"]
+  },
+
   "observability": {
     "enabled": true
   }

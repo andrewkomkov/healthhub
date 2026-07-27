@@ -1,0 +1,106 @@
+/*
+ * The analytical surface, loaded with the health chunk. Tokens only, as everywhere.
+ */
+
+.hh-history {
+  gap: var(--hh-space-md);
+}
+
+.hh-connect {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-md);
+  padding: var(--hh-space-lg);
+  border-radius: var(--md-sys-shape-large);
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.hh-connect__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--hh-space-lg);
+  flex-wrap: wrap;
+}
+
+.hh-connect__manual > summary {
+  cursor: pointer;
+  padding: var(--hh-space-sm) 0;
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.hh-connect__manual > summary:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+  border-radius: var(--md-sys-shape-small);
+}
+
+.hh-connect__form,
+.hh-history__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-md);
+  padding-top: var(--hh-space-sm);
+}
+
+/* A button in a column of fields would otherwise stretch to the width of the widest one. */
+.hh-connect__form .m3-button,
+.hh-history__panel .m3-button {
+  align-self: flex-start;
+}
+
+/* A file input sizes itself around the browser's own button; the field height meant for text
+   would leave it floating in the middle of a 56px box. */
+.hh-connect__form input[type='file'] {
+  min-height: 0;
+  padding: var(--hh-space-md);
+  font-size: var(--md-sys-type-body-small-size);
+}
+
+/* Chips wrap here: the question list is longer than the two-way switch on the detail screen. */
+.hh-history__questions {
+  flex-wrap: wrap;
+}
+
+/* A wide result scrolls sideways rather than forcing the page to. */
+.hh-result {
+  overflow-x: auto;
+}
+
+.hh-history__sql > summary {
+  cursor: pointer;
+  padding: var(--hh-space-sm) 0;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.hh-history__sql > summary:focus-visible {
+  outline: 2px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+  border-radius: var(--md-sys-shape-small);
+}
+
+.hh-history__editor {
+  width: 100%;
+  padding: var(--hh-space-md);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-medium);
+  background: var(--md-sys-color-surface-container-lowest);
+  color: var(--md-sys-color-on-surface);
+  /* The one thing not from a token: the type scale has no monospace family, and SQL that does
+     not align by column is harder to read than it needs to be. Size and colour are tokens. */
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--md-sys-type-body-small-size);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.hh-history__editor:focus {
+  outline: none;
+  border-color: var(--md-sys-color-primary);
+  border-width: 2px;
+  padding: calc(var(--hh-space-md) - 1px);
+}
+
+.hh-history__status {
+  color: var(--md-sys-color-on-surface-variant);
+}

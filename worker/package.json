@@ -15,7 +15,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply healthhub --remote"
   },
   "dependencies": {
-    "hono": "^4.12.32"
+    "hono": "^4.12.32",
+    "hyparquet-writer": "^0.16.1"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.18.8",
