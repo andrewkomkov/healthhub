@@ -277,6 +277,13 @@ export const activityRoutes = new Hono<AppEnv>()
       activity: {
         ...feedItem(row as unknown as FeedRow),
         description: row['description'],
+        // The Health Connect record id this activity was ingested from. Returned only on the
+        // detail response, and only because the phone cannot re-derive it: two apps recording
+        // the same walk produce two sessions with the same start instant and, when one of them
+        // re-wrote the other's data, the same source package. Matching on those two fields
+        // picks an arbitrary one of the pair, so an athlete importing a route on one activity
+        // watched the track attach to its duplicate. This is the identifier that disambiguates.
+        sourceUid: row['source_uid'],
         endTime: row['end_time'],
         elevationLossM: row['elevation_loss_m'],
         caloriesKcal: row['calories_kcal'],

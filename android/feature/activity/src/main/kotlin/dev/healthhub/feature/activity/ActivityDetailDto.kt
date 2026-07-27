@@ -38,6 +38,16 @@ data class ActivityDetailDto(
     val routePolyline: String? = null,
     val bounds: List<Double>? = null,
     val sourcePackage: String? = null,
+    /**
+     * The Health Connect record id this activity was ingested from, when the server knows it.
+     *
+     * Null for an activity uploaded before the field existed, which is why [RouteImporter] still
+     * carries the start-time fallback. Prefer this: two apps recording the same walk produce two
+     * sessions sharing a start instant and a source package, and matching on those picks one of
+     * the pair at random — which is how a route import landed on the duplicate of the activity
+     * the athlete was looking at.
+     */
+    val sourceUid: String? = null,
     val sourceCount: Int = 1,
     /**
      * "active" or "archived". Read here because importing a route re-uploads the workout, and

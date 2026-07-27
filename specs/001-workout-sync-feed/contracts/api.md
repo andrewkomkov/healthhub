@@ -311,6 +311,13 @@ Full detail: every summary column plus `splits`, `zones`, `channels`, `sampleCou
 whether each telemetry variant exists. Still no R2 access — the detail screen renders its
 summary panel and splits table before any telemetry arrives.
 
+Also returns **`sourceUid`**, the Health Connect record id this activity was ingested from, and
+this is the only response that carries it. The phone needs it to find the session behind an
+activity before asking for its GPS track: the same walk recorded by two apps produces two
+sessions sharing a start instant and a source package, so matching on those attaches the
+imported route to whichever of the pair was picked first. `null` for rows uploaded before the
+field existed, which is why the client keeps a start-time fallback.
+
 ### `PATCH /api/activities/:id`
 
 ```jsonc

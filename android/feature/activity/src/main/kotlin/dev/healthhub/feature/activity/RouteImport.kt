@@ -85,13 +85,21 @@ class RouteImporter @Inject constructor(
             return RouteImportState.Unsupported
         }
 
+        // The id the activity was ingested under, when the server knows it. Everything else is a
+        // guess: the same walk recorded by two apps produces two sessions with one start instant
+        // between them, and picking by start time picks one of the pair arbitrarily. That is not
+        // a cosmetic difference — the import re-ingests whichever session it matched and upserts
+        // on *that* session's id, so a wrong match silently attaches the track to the duplicate
+        // and leaves the activity on screen still asking to import one.
         val session = runCatching {
-            healthConnect.findSession(
-                startTimeMs = activity.startTime,
-                endTimeMs = activity.endTime.takeIf { it > activity.startTime }
-                    ?: (activity.startTime + activity.elapsedSeconds * 1_000),
-                sourcePackage = activity.sourcePackage,
-            )
+            activity.sourceUid?.let { healthConnect.readSession(it) }
+                // Only for activities uploaded before the server returned the field.
+                ?: healthConnect.findSession(
+                    startTimeMs = activity.startTime,
+                    endTimeMs = activity.endTime.takeIf { it > activity.startTime }
+                        ?: (activity.startTime + activity.elapsedSeconds * 1_000),
+                    sourcePackage = activity.sourcePackage,
+                )
         }.getOrNull() ?: return decideRouteImport(sessionId = null, route = null)
 
         return decideRouteImport(session.metadata.id, healthConnect.routeState(session))
