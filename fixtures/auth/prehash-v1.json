@@ -1,0 +1,34 @@
+{
+  "note": "Client-side password pre-hash (research.md R-006 amendment). The derivation is implemented three times — web/src/features/auth/prehash.ts, android core:network PasswordProofs.kt, and nothing in the Worker, which only ever hashes what it receives. These vectors are the only thing keeping the two implementations from drifting apart quietly. The Worker cannot generate them: 600,000 iterations is six times the PBKDF2 ceiling workerd enforces, which is the entire reason this file exists.",
+  "scheme": "pbkdf2-sha256/600000/v1",
+  "algorithm": "PBKDF2-HMAC-SHA-256",
+  "iterations": 600000,
+  "keyBytes": 32,
+  "saltPrefix": "healthhub/password/v1\n",
+  "saltDerivation": "SHA-256(utf8(saltPrefix + email.trim().toLowerCase()))",
+  "passwordEncoding": "utf8",
+  "valueEncoding": "base64",
+  "vectors": [
+    {
+      "why": "the ordinary case",
+      "email": "a@example.com",
+      "password": "correct-horse-battery",
+      "saltBase64": "U9VSTQevPnZARa6VGiemGzQhUASU5Nwyk/MuYbhQZn4=",
+      "value": "EorB+NlG6LiUilnNzHQjhwSMKxSLZZSXn7XnhRlb214="
+    },
+    {
+      "why": "the salt is derived from the normalised address, so casing and whitespace must not change it",
+      "email": "  Andrew.Komkov@Example.COM ",
+      "password": "correct-horse-battery",
+      "saltBase64": "C1WNy4GreDYx8quPAOb8SeLmwD0PxPGrIElBI0OA96I=",
+      "value": "gEJshcsKuO4oX8+zSpjnwC5rD4huvnfWS76l1cYx+Kc="
+    },
+    {
+      "why": "the password is hashed as UTF-8 bytes, which is what a JCE PBEKeySpec does not do",
+      "email": "unicode@example.com",
+      "password": "пароль-Ω-🚴-passphrase",
+      "saltBase64": "bVI+afYtBYqcLDdrVfxu9geKDOQmWmczmQYEKSV2lCE=",
+      "value": "Ccd6R/wfQ0NQ4TVF56DEUFeBB/en6ObDYXwHPuu+THg="
+    }
+  ]
+}

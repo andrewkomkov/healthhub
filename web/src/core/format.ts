@@ -64,3 +64,23 @@ export function localDate(startTime: number, tzOffsetMinutes: number): string {
 export function sportLabel(sport: string): string {
   return sport.charAt(0).toUpperCase() + sport.slice(1).replace(/[_-]/g, ' ')
 }
+
+/**
+ * A human name for the app that wrote a recording.
+ *
+ * The phone sends a label when Android could give it one, and a package name always. Falling
+ * back to the last meaningful segment beats showing `com.google.android.apps.fitness` in a
+ * list the athlete is meant to reason about — but the package stays visible next to it,
+ * because two apps can share a pretty name and only one of them wrote this workout.
+ */
+export function sourceLabel(packageName: string | null, label?: string | null): string {
+  if (label) return label
+  if (!packageName) return 'Unknown app'
+
+  const segments = packageName.split('.').filter(Boolean)
+  // Trailing segments like `.app` or `.android` name the platform, not the product.
+  const generic = new Set(['app', 'apps', 'android', 'mobile', 'client'])
+  const meaningful = [...segments].reverse().find((segment) => !generic.has(segment))
+  const name = meaningful ?? segments[segments.length - 1] ?? packageName
+  return name.charAt(0).toUpperCase() + name.slice(1)
+}

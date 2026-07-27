@@ -13,11 +13,44 @@ object prefix below states which side of that line it is on and why.
 | Encoded route polyline | D1 | A few hundred bytes; needed for every feed card (R-005) |
 | Derived metrics (splits, zones, channel stats) | D1 | Small, read with the activity, never scanned |
 | Sync cursors and reports | D1 | Small, per device |
+| Scalar health measurements | D1 | Two numbers and a timestamp; queried by kind and date range |
+| Sleep session summaries | D1 | One row per night, with the stage totals the phone computed |
+| Sleep stage intervals (hypnogram) | R2 | Tens to hundreds per night; read whole with one night, never queried |
 | Full-resolution telemetry | R2 | Megabytes; read whole, never queried (R-002) |
 | Downsampled preview telemetry | R2 | Tens of kilobytes; read whole (R-003) |
+| Compacted Parquet parts | R2 | The analytical tier; read by a query engine, never by the app (R-013) |
+| Which months are compacted, and their part keys | D1 | One small row per athlete-month; the manifest a rebuild flips atomically |
+| Issued archive credentials (public half only) | D1 | One small row per key the athlete minted |
 | Future: generated GPX/FIT/CSV exports | R2 | Large generated artefacts |
 
 Nothing in D1 stores a sample array. Nothing in R2 is queried by content.
+
+### Why sleep splits across both stores
+
+The daily-grain health data added in session 4 is two different shapes wearing one name, and
+they belong on opposite sides of the line.
+
+A resting heart rate, an HRV reading, a weight, a blood pressure — each is a timestamp, a
+number or two, and a unit. A few land per day. Every screen that uses them asks "this kind,
+this date range, newest first", which is one indexed read. That is D1, and one table
+(`health_measurements`) holds all of them, because they genuinely have the same shape.
+
+A night of sleep is not that shape. Its *summary* is — start, end, and how many seconds were
+spent in each stage — so `sleep_sessions` is a D1 row and a ninety-night trend is one indexed
+read that touches no object storage. Its *hypnogram* is not: the interval list runs to tens or
+hundreds of entries per night, which as child rows is roughly twenty thousand rows a year per
+athlete, none of it ever queried by content. It is only ever read whole, with the one night it
+belongs to. That is the R2 case, and it is the same call already made for activities: the
+summary is a row, the series is an object.
+
+The alternative considered and rejected was a `sleep_stages` child table modelled on
+`activity_splits`. It works, and at one athlete's volume it would never be noticed — but splits
+are bounded by distance and stages are not, and the whole reason for writing the classification
+down is that the second table is where the row count starts growing for no query that needs it.
+
+What is *not* stored anywhere: sleep quality, readiness, a rolling HRV baseline, a seven-day
+average. Those are computed on the device from these rows (Principle I). The Worker stores what
+the phone derived and returns it unchanged.
 
 ## D1 schema
 
@@ -184,6 +217,122 @@ CREATE TABLE privacy_zones (
 CREATE INDEX idx_privacy_zones_user ON privacy_zones(user_id);
 ```
 
+```sql
+-- 0006_health_records.sql — daily-grain health data.
+
+-- Point-in-time scalar measurements: resting heart rate, HRV (RMSSD), SpO2, weight, body fat,
+-- blood pressure, and whatever the phone's registry grows next.
+CREATE TABLE health_measurements (
+  id                TEXT PRIMARY KEY,
+  user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_uid        TEXT NOT NULL,      -- Health Connect record UID: idempotency key
+  source_package    TEXT,
+  -- A slug such as 'resting_heart_rate'. No CHECK and no allow-list in the Worker: which
+  -- record types exist is the phone's knowledge, and Principle VI's "ingest everything"
+  -- must not need an edge deploy per new type. The route checks the slug's shape only.
+  kind              TEXT NOT NULL,
+  measured_at       INTEGER NOT NULL,
+  tz_offset_minutes INTEGER NOT NULL DEFAULT 0,
+  local_date        TEXT NOT NULL,      -- 'YYYY-MM-DD', same arithmetic as the R2 partition
+  -- Two numbers and a unit covers every scalar type. Blood pressure is the only one that
+  -- needs both: value = systolic, secondary = diastolic. The Worker does not know that.
+  value             REAL NOT NULL,
+  secondary_value   REAL,
+  unit              TEXT NOT NULL,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_health_measurements_source ON health_measurements(user_id, source_uid);
+CREATE INDEX idx_health_measurements_kind ON health_measurements(user_id, kind, measured_at DESC);
+CREATE INDEX idx_health_measurements_recent ON health_measurements(user_id, measured_at DESC);
+
+-- One night. Stage totals arrive computed from the phone; the intervals live in R2.
+CREATE TABLE sleep_sessions (
+  id                   TEXT PRIMARY KEY,
+  user_id              TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  source_uid           TEXT NOT NULL,
+  source_package       TEXT,
+  title                TEXT,
+  start_time           INTEGER NOT NULL,
+  end_time             INTEGER NOT NULL,
+  tz_offset_minutes    INTEGER NOT NULL DEFAULT 0,
+  -- The morning, not the bedtime: a night is named for the day the athlete woke up, so two
+  -- consecutive nights never collide on one calendar column.
+  local_date           TEXT NOT NULL,
+  total_seconds        INTEGER NOT NULL,
+  time_in_bed_seconds  INTEGER,
+  -- All eight Health Connect stage types get a column, so a device reporting an unusual one
+  -- still lands somewhere. NULL means "this source never reported it", never zero.
+  awake_seconds        INTEGER,
+  awake_in_bed_seconds INTEGER,
+  out_of_bed_seconds   INTEGER,
+  sleeping_seconds     INTEGER,
+  light_seconds        INTEGER,
+  deep_seconds         INTEGER,
+  rem_seconds          INTEGER,
+  unknown_seconds      INTEGER,
+  stage_count          INTEGER NOT NULL DEFAULT 0,
+  stages_key           TEXT,            -- R2 key of the hypnogram, NULL until uploaded
+  stages_bytes         INTEGER,
+  created_at           INTEGER NOT NULL,
+  updated_at           INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX idx_sleep_sessions_source ON sleep_sessions(user_id, source_uid);
+CREATE INDEX idx_sleep_sessions_night ON sleep_sessions(user_id, start_time DESC);
+
+-- ── Analytical archive tier (migration 0007) ────────────────────────────────────────────
+-- Bookkeeping about objects, never the objects. The Parquet lives in R2 and the Worker never
+-- reads a byte of it back (R-014).
+
+-- One row per compacted (athlete, dataset, month): the authority on what is live.
+CREATE TABLE archive_months (
+  user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dataset          TEXT NOT NULL CHECK (dataset IN ('activities', 'samples')),
+  year             INTEGER NOT NULL,
+  month            INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+  generation       INTEGER NOT NULL DEFAULT 1,
+  part_count       INTEGER NOT NULL,
+  row_count        INTEGER NOT NULL,
+  bytes            INTEGER NOT NULL,
+  -- MAX(updated_at) and COUNT(*) of the rows that went into this build. The nightly job
+  -- recomputes both and skips the month when neither moved. Row metadata, never a metric.
+  source_watermark INTEGER NOT NULL,
+  source_rows      INTEGER NOT NULL,
+  compacted_at     INTEGER NOT NULL,
+  PRIMARY KEY (user_id, dataset, year, month)
+);
+
+-- The live parts. A rebuild deletes and re-inserts this month's rows inside one D1 batch, so
+-- a reader asking the API which parts exist is never given a half-replaced list.
+CREATE TABLE archive_parts (
+  key        TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dataset    TEXT NOT NULL,
+  year       INTEGER NOT NULL,
+  month      INTEGER NOT NULL,
+  part_index INTEGER NOT NULL,
+  generation INTEGER NOT NULL,
+  row_count  INTEGER NOT NULL,
+  bytes      INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX idx_archive_parts_month ON archive_parts(user_id, dataset, year, month, part_index);
+
+-- Scoped read-only R2 credentials the athlete minted. The secret and session token are
+-- returned once and never stored: this is an audit trail, not a key store.
+CREATE TABLE archive_credentials (
+  id            TEXT PRIMARY KEY,
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  access_key_id TEXT NOT NULL,
+  prefix        TEXT NOT NULL,     -- always u/{user_id}/archive/
+  permission    TEXT NOT NULL,     -- always object-read-only
+  label         TEXT,
+  issued_at     INTEGER NOT NULL,
+  expires_at    INTEGER NOT NULL
+);
+CREATE INDEX idx_archive_credentials_user ON archive_credentials(user_id, issued_at DESC);
+```
+
 **Foreign keys**: D1 enforces them only when `PRAGMA foreign_keys = ON`, which Wrangler
 applies per connection. Account deletion (FR-029) therefore does not rely on cascade alone —
 the delete route explicitly removes R2 objects under the user's prefix and then deletes the
@@ -203,10 +352,16 @@ natively. Date-partitioned so prefixes prune and lifecycle rules stay expressibl
 u/{user_id}/activities/year=2026/month=07/{activity_id}/full.hht      # full resolution
 u/{user_id}/activities/year=2026/month=07/{activity_id}/preview.hht   # ~2000 points/channel
 u/{user_id}/activities/year=2026/month=07/{activity_id}/export.gpx    # later phase
+u/{user_id}/health/sleep/year=2026/month=07/{sleep_id}.json           # one night's hypnogram
 ```
 
-**Analytical tier** — the whole history, read by a query engine, Parquet + zstd, compacted
-into 128–512 MB parts by a scheduled job. Never read by the app itself:
+The hypnogram is partitioned by the night's **wake** instant, so the object sits in the month
+the night is named for. It is JSON rather than `.hht` because it is an interval list, not a
+sampled series: tens of entries, no channels to align, and nothing to gain from a binary
+layout. Stored gzipped and served with the encoding R2 recorded, like everything else here.
+
+**Analytical tier** — the whole history, read by a query engine, compacted by a scheduled job.
+Never read by the app itself:
 
 ```text
 u/{user_id}/archive/activities/year=2026/month=07/part-0001.parquet   # one row per activity
@@ -214,7 +369,22 @@ u/{user_id}/archive/samples/year=2026/month=07/part-0001.parquet      # long-for
 ```
 
 Partitioning is by the activity's **local** start date, so a month's prefix matches what the
-athlete would call that month.
+athlete would call that month. Part names are stable and dense from `part-0001`, so a rebuild
+overwrites part for part and the documented glob keeps working.
+
+**As built (session 5)**, with the reasoning in R-013:
+
+- **Snappy, not zstd.** workerd has no zstd, and the Parquet writer takes a synchronous
+  compressor while the only compression the runtime offers is the asynchronous
+  `CompressionStream` (gzip and deflate only). Snappy is written honestly rather than zstd
+  written falsely.
+- **`activities` only.** The `samples` prefix above stays reserved: assembling it would mean
+  decoding `.hht` objects in the Worker, which Principle I forbids. It belongs to whichever
+  client already holds the samples.
+- **128–512 MB parts do not happen and do not need to.** One row per activity makes a busy
+  month a few hundred kilobytes, and a part is encoded in memory inside a 128 MB isolate. The
+  cut is a memory bound (50 000 rows) rather than a size target; the small-files problem it
+  guards against needs thousands of objects per query and a year of history is twelve.
 
 Keys are never guessable-by-design and are never served directly: every interactive read
 passes through the Worker's ownership check (R-004). The analytical tier is reached with
@@ -222,7 +392,9 @@ scoped S3 credentials the athlete generates for themselves — R2 charges no egr
 querying a full history from DuckDB or ClickHouse costs nothing in transfer.
 
 **Uploads above 100 MB use multipart** with 8 MB parts, so a million-sample activity on a
-mobile connection resumes part-by-part instead of restarting.
+mobile connection resumes part-by-part instead of restarting. The archive writer implements
+this (`worker/src/archive/upload.ts`); at current volumes no part comes close to the
+threshold, and the phone's telemetry upload is still a single streamed PUT.
 
 ## Telemetry codec (`.hht` v1)
 
@@ -265,11 +437,15 @@ Rules:
 - Missing individual samples are sentinel-encoded: `NaN` for float channels, `0xFFFF` /
   `0xFFFFFFFF` for unsigned integer channels. Readers must skip sentinels rather than plot
   them — this is how the GPS-gap edge case renders as a gap instead of a straight line.
-- Payloads are little-endian and start on their natural alignment; the encoder inserts
-  padding after the header so the first payload is 8-byte aligned, letting the browser build
-  typed-array views over the buffer with no copy.
+- Payloads are little-endian and contiguous. The encoder pads after the header so the *first*
+  payload is 8-byte aligned, which lets the browser build typed-array views over the buffer
+  with no copy. Alignment beyond the first channel is not guaranteed: an odd sample count in
+  the `u32` time channel leaves the `f64` channels behind it on a 4-byte boundary, and a
+  reader must copy those rather than view them. Padding between channels would cost a format
+  version, and copying two channels is cheaper than that.
 - Objects are stored gzip-compressed with `Content-Encoding: gzip`, so transfer cost is close
-  to a delta-encoded format while decode stays free.
+  to a delta-encoded format while decode stays free. Readers must not assume the transport
+  decompressed it — see the Workers note in `docs/AGENT-NOTES.md` — and sniff the gzip magic.
 - `t` is milliseconds relative to `startTime`, which keeps it in `u32` for any plausible
   session length and halves the largest channel.
 
@@ -286,6 +462,8 @@ Version bumps change the magic suffix (`HHT2`), and readers reject unknown magic
 | Derived Summary | summary columns on `activities` + `activity_splits` + `activity_zones` |
 | Sync Cursor | `sync_cursors` row per device per record type |
 | Sync Report | `sync_reports` row |
+| Health Measurement | `health_measurements` row |
+| Sleep Session | `sleep_sessions` row + the night's hypnogram object |
 
 ## Android local store (Room)
 
@@ -297,3 +475,18 @@ The phone keeps its own staging and cache database — not a mirror of D1, a wor
 - `cached_activities` — the feed rows already fetched, so the feed is browsable offline
   (FR-014).
 - `sync_state` — mirror of the cursors, authoritative locally until the upload is confirmed.
+  Keyed by record type: `ExerciseSession` for the workout pass, and `health:{domain}` —
+  `health:sleep`, `health:recovery`, `health:body`, `health:vitals` — one per daily-grain
+  domain. They are separate because a domain the athlete switches on a year after installing
+  has to backfill its own history without re-reading everything else, and because a domain
+  whose upload failed must not hold back the ones that succeeded. Every one of them is dropped
+  on sign-out with the rest of the table.
+
+### Reading windows, and why they differ
+
+The workout pass reads a **day** at a time and the daily-grain pass reads a **month**. Both are
+batched per window rather than per record, which is the constraint that matters: eight reads per
+*session* exhausted Health Connect's API quota partway through a real backfill. What differs is
+memory — a day of heart-rate samples is as much as should be held at once, while a month of
+resting heart rates is thirty rows. A year's backfill of all four daily-grain domains costs
+twelve windows at up to seven reads each.

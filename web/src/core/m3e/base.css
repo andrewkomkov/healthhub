@@ -30,6 +30,20 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/*
+ * One focus ring for the whole product, from the token palette.
+ *
+ * The default ring is the user agent's colour, not ours, and on a primary-filled button it can
+ * land at any contrast at all. `:focus-visible` rather than `:focus` so a pointer press does
+ * not leave a ring behind, and an offset outline rather than a border so nothing reflows when
+ * focus arrives — the outline follows whatever radius the element already has, including the
+ * button's shape morph. The offset is what separates the ring from a filled background.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid var(--md-sys-color-primary);
+  outline-offset: 2px;
+}
+
 /* ----------------------------------------------------------------- type roles */
 
 .t-display-large,
@@ -216,11 +230,16 @@ body {
   transition: border-color var(--md-sys-motion-effects-fast);
 }
 
+/* The thicker primary border is the resting focus treatment; the ring above still applies to
+   keyboard focus, so the field is not the one control in the product without one. */
 .m3-field > input:focus {
-  outline: none;
   border-color: var(--md-sys-color-primary);
   border-width: 2px;
   padding: 0 calc(var(--hh-space-lg) - 1px);
+}
+
+.m3-field > input:focus:not(:focus-visible) {
+  outline: none;
 }
 
 /* -------------------------------------------------------------------- structure */
@@ -264,6 +283,328 @@ body {
   border-radius: var(--md-sys-shape-medium);
   background: var(--md-sys-color-error-container);
   color: var(--md-sys-color-on-error-container);
+}
+
+/*
+ * An error the athlete can do something about. The message and the way out share a line and
+ * wrap onto two when the text is scaled up, rather than the button sliding off the end.
+ *
+ * The button inherits `on-error-container` instead of keeping its own `primary`: the primary
+ * role is measured against the surfaces, never against the error container, and a link colour
+ * that happens to land on a red panel is exactly the pairing nothing is checking.
+ */
+.m3-error--actionable {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hh-space-md);
+}
+
+.m3-error--actionable .m3-button--text {
+  color: inherit;
+}
+
+.m3-error--actionable .m3-button--text:hover:not(:disabled) {
+  background: color-mix(in srgb, currentcolor 8%, transparent);
+}
+
+/* --------------------------------------------------------------- activity detail */
+
+.hh-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-lg);
+  padding: var(--hh-space-lg);
+}
+
+.hh-section__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hh-space-md);
+  flex-wrap: wrap;
+}
+
+.hh-detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-xs);
+}
+
+.hh-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--hh-space-lg);
+}
+
+.hh-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Chips — the Expressive selection control, shape-morphing on selection. */
+.hh-chips {
+  display: flex;
+  gap: var(--hh-space-sm);
+}
+
+/*
+ * A chip is 40px tall because that is the Expressive shape; it is 48px to hit because that is
+ * the smallest target a thumb finds reliably. The pseudo-element bridges the two without
+ * changing the layout — growing the chip itself would push the row apart on every screen to
+ * fix a problem that only exists under a finger.
+ */
+.hh-chip {
+  position: relative;
+  min-height: 40px;
+  padding: 0 var(--hh-space-lg);
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--md-sys-shape-full);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: inherit;
+  font-size: var(--md-sys-type-label-large-size);
+  font-weight: var(--md-sys-type-label-large-weight);
+  cursor: pointer;
+  transition:
+    background var(--md-sys-motion-effects-default),
+    border-radius var(--md-sys-motion-spatial-fast);
+}
+
+.hh-chip::after {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+  min-height: 48px;
+}
+
+.hh-chip--selected {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+  border-color: transparent;
+  border-radius: var(--md-sys-shape-medium);
+}
+
+.hh-chip:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------------ charts */
+
+.hh-chart-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-md);
+  width: 100%;
+}
+
+.hh-chart {
+  margin: 0;
+}
+
+.hh-chart__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--hh-space-md);
+  padding-bottom: var(--hh-space-xs);
+}
+
+.hh-chart__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hh-space-sm);
+}
+
+.hh-chart__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--md-sys-shape-full);
+}
+
+/* µPlot draws into a canvas it sizes itself; the wrapper only has to not fight it. */
+.hh-chart__canvas .uplot,
+.hh-chart__canvas .u-wrap {
+  width: 100% !important;
+}
+
+/* The library ships its own greys. Every one of them is overridden here from tokens. */
+.uplot {
+  font-family: var(--md-sys-type-font-family);
+}
+
+.u-select {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
+  border-radius: var(--md-sys-shape-small);
+}
+
+.u-cursor-x,
+.u-cursor-y {
+  border-color: var(--chart-ink-muted) !important;
+}
+
+.u-cursor-pt {
+  border-radius: var(--md-sys-shape-full);
+}
+
+.hh-selection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-md);
+  padding: var(--hh-space-lg);
+  border-radius: var(--md-sys-shape-large);
+  background: var(--md-sys-color-surface-container-high);
+}
+
+/* --------------------------------------------------------------------------- map */
+
+.hh-map {
+  width: 100%;
+  border-radius: var(--md-sys-shape-extra-large);
+  overflow: hidden;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.hh-map .maplibregl-ctrl-group {
+  background: var(--md-sys-color-surface-container);
+  border-radius: var(--md-sys-shape-medium);
+  box-shadow: none;
+  border: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.hh-map .maplibregl-ctrl-group button + button {
+  border-top-color: var(--md-sys-color-outline-variant);
+}
+
+.hh-map .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--md-sys-color-surface) 80%, transparent);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--md-sys-type-body-small-size);
+}
+
+/* ------------------------------------------------------------------------ tables */
+
+/*
+ * A table is the one thing on these screens that cannot reflow — its columns are as wide as
+ * the numbers in them, and every cell is `nowrap` on purpose so a split time never breaks in
+ * half. At 200% text on a narrow viewport it therefore has to scroll inside its own section:
+ * the card clips its overflow, so without this the last columns become unreachable rather
+ * than merely off screen.
+ */
+.hh-section:has(> .hh-table) {
+  overflow-x: auto;
+}
+
+.hh-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--md-sys-type-body-medium-size);
+}
+
+.hh-table th,
+.hh-table td {
+  padding: var(--hh-space-sm) var(--hh-space-md) var(--hh-space-sm) 0;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hh-table thead th {
+  font-size: var(--md-sys-type-label-medium-size);
+  font-weight: 500;
+  color: var(--md-sys-color-on-surface-variant);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.hh-table tbody th {
+  text-align: left;
+  font-weight: 500;
+}
+
+.hh-table tbody tr + tr th,
+.hh-table tbody tr + tr td {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* The bar column carries the comparison; it collapses first when space runs out. */
+.hh-table__bar-column {
+  width: 40%;
+  padding-right: 0;
+}
+
+.hh-bar {
+  display: block;
+  height: 8px;
+  border-radius: var(--md-sys-shape-full);
+  background: var(--chart-channel-speed);
+}
+
+@media (max-width: 35rem) {
+  .hh-table__bar-column {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------------- zones */
+
+.hh-zones {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-sm);
+}
+
+.hh-zone-row {
+  display: grid;
+  grid-template-columns: 2.5rem 5rem 1fr 4rem 3rem;
+  align-items: center;
+  gap: var(--hh-space-md);
+}
+
+.hh-zone-row__bound {
+  text-align: right;
+}
+
+.hh-zone-row__track {
+  display: block;
+  height: 12px;
+  border-radius: var(--md-sys-shape-full);
+  background: var(--md-sys-color-surface-container-highest);
+  overflow: hidden;
+}
+
+.hh-zone-row__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--md-sys-shape-full);
+}
+
+.hh-zone-row .numeric {
+  text-align: right;
+}
+
+@media (max-width: 35rem) {
+  .hh-zone-row {
+    grid-template-columns: 2.5rem 1fr 4rem;
+  }
+  .hh-zone-row__bound {
+    display: none;
+  }
+  .hh-zone-row > :last-child {
+    display: none;
+  }
+}
+
+.hh-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 /* Respect the athlete's motion preference — Expressive motion is emphatic by design. */
