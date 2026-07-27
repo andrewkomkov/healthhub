@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && find dist -name '.DS_Store' -delete",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
