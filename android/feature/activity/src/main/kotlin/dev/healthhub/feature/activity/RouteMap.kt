@@ -35,6 +35,7 @@ import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
+import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.layers.CircleLayer
@@ -229,7 +230,21 @@ private fun endpointLayer(id: String, source: String, fill: Color, stroke: Color
         PropertyFactory.circleStrokeColor(stroke.toArgb()),
     )
 
-private fun createMapView(context: Context): MapView = MapView(context).apply { onCreate(null) }
+/**
+ * Texture mode, not the default surface mode, and the rounded corners are why.
+ *
+ * MapLibre renders into a `SurfaceView` by default. A `SurfaceView` owns a window punched
+ * *through* the view hierarchy, so it ignores the clip its parent sets — clipping it to the
+ * Expressive shape produced a container drawn correctly with nothing at all inside it, which
+ * looks exactly like a map that failed to load and gives no error saying otherwise. A
+ * `TextureView` is composited with everything else and clips like any other view.
+ *
+ * The cost is real but small at this size: one extra copy per frame, on a map that is 260 dp
+ * tall and is not being panned continuously.
+ */
+private fun createMapView(context: Context): MapView =
+    MapView(context, MapLibreMapOptions.createFromAttributes(context).textureMode(true))
+        .apply { onCreate(null) }
 
 /** The GL surface exists asynchronously; suspending on it beats a callback per caller. */
 private suspend fun MapView.awaitMap(): MapLibreMap = suspendCancellableCoroutine { continuation ->
