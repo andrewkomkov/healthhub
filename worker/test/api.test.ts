@@ -352,6 +352,27 @@ describe('activities', () => {
     expect(body.activity.distanceM).toBeCloseTo(92_310.4)
   })
 
+  it('returns the source uid on the detail response, and only there', async () => {
+    // The phone needs this to find the Health Connect session behind an activity before asking
+    // for its GPS track. Without it the match falls back to start time plus source package,
+    // which is ambiguous for the same walk recorded by two apps — and the imported route then
+    // lands on the duplicate of the activity the athlete was looking at.
+    const created = await json('/api/activities', sampleActivity('hc-route-match'), {
+      headers: auth,
+    })
+    const { activity } = (await created.json()) as { activity: { id: string } }
+
+    const detail = await request(`/api/activities/${activity.id}`, { headers: { cookie } })
+    const body = (await detail.json()) as { activity: { sourceUid: string } }
+    expect(body.activity.sourceUid).toBe('hc-route-match')
+
+    // The feed carries one row per activity and is the hot path; the session id is of no use
+    // to it, so it stays off that response.
+    const feed = await request('/api/activities', { headers: { cookie } })
+    const { activities } = (await feed.json()) as { activities: Record<string, unknown>[] }
+    expect(activities[0]).not.toHaveProperty('sourceUid')
+  })
+
   it('is idempotent on the source id', async () => {
     const first = await json('/api/activities', sampleActivity('hc-repeat'), { headers: auth })
     const second = await json('/api/activities', sampleActivity('hc-repeat'), { headers: auth })
