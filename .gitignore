@@ -11,6 +11,9 @@ dist/
 
 # Android / Gradle
 android/.gradle/
+# build-logic is its own Gradle build, so it has its own caches and lock files.
+# They churn on every invocation and were tracked by accident.
+android/build-logic/.gradle/
 android/build/
 android/*/build/
 android/*/*/build/
