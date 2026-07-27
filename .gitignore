@@ -48,3 +48,6 @@ google_health_strava_prd.pdf
 .env
 .env.*
 !.env.example
+
+# Gradle wrapper jar is committed on purpose (reproducible builds); local SDK path is not
+android/local.properties
