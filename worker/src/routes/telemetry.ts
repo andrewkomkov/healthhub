@@ -105,8 +105,13 @@ export const telemetryRoutes = new Hono<AppEnv>()
     const headers = new Headers()
     object.writeHttpMetadata(headers)
     headers.set('etag', object.httpEtag)
-    // Telemetry for a given activity never changes once written.
-    headers.set('cache-control', 'private, max-age=31536000, immutable')
+    // Telemetry used to be immutable, and this header said so for a year at a time. It is not
+    // any more: importing a GPS route re-ingests the workout and rewrites both objects at the
+    // same key (R-015), and a client holding an immutable copy would never see the route it
+    // just imported, with nothing anywhere to say why. Revalidation is cheap — the conditional
+    // request above answers 304 with no body and no R2 egress when nothing has changed — and
+    // it is the same bargain the hypnogram already makes for the same reason.
+    headers.set('cache-control', 'private, max-age=0, must-revalidate')
     headers.set('content-type', 'application/octet-stream')
 
     return new Response(object.body, { status: range ? 206 : 200, headers })

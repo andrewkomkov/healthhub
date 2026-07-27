@@ -15,6 +15,16 @@ export interface RateLimit {
 
 export const AUTH_LIMIT: RateLimit = { bucket: 'auth', limit: 10, windowMs: 15 * 60 * 1000 }
 export const SYNC_LIMIT: RateLimit = { bucket: 'sync', limit: 20_000, windowMs: 60 * 60 * 1000 }
+/**
+ * Minting archive credentials hands out a key that outlives the request, and Cloudflare
+ * cannot revoke one before it expires. A handful an hour is more than a person needs and far
+ * fewer than a stolen session could usefully collect.
+ */
+export const ARCHIVE_CREDENTIAL_LIMIT: RateLimit = {
+  bucket: 'archive-credentials',
+  limit: 10,
+  windowMs: 60 * 60 * 1000,
+}
 
 export async function enforce(db: D1Database, rule: RateLimit, identity: string): Promise<void> {
   const now = Date.now()

@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import type { AppEnv } from '../types'
+import { decodeCursor, encodeCursor } from '../lib/cursor'
 import { fail } from '../lib/errors'
 import { authenticate, ownedActivity, requireDevice } from '../lib/guard'
 import { activityPrefix } from '../lib/keys'
@@ -65,25 +66,6 @@ const feedItem = (row: FeedRow) => ({
   archivedReason: row.archived_reason,
   visibilityLocked: row.visibility_locked === 1,
 })
-
-/** Keyset cursors are opaque to the client but are just `startTime:id`. */
-function encodeCursor(startTime: number, id: string): string {
-  return btoa(`${startTime}:${id}`).replace(/=+$/, '')
-}
-
-function decodeCursor(cursor: string): { startTime: number; id: string } {
-  let decoded: string
-  try {
-    decoded = atob(cursor)
-  } catch {
-    fail('validation_failed', 'Malformed cursor.')
-  }
-  const sep = decoded.indexOf(':')
-  const startTime = Number(decoded.slice(0, sep))
-  const id = decoded.slice(sep + 1)
-  if (!Number.isFinite(startTime) || !id) fail('validation_failed', 'Malformed cursor.')
-  return { startTime, id }
-}
 
 export const activityRoutes = new Hono<AppEnv>()
 
@@ -245,9 +227,9 @@ export const activityRoutes = new Hono<AppEnv>()
     }
     if (cursor) {
       // Keyset pagination: stable even as new activities arrive at the head.
-      const { startTime, id } = decodeCursor(cursor)
+      const { ts, id } = decodeCursor(cursor)
       where.push('(start_time < ? OR (start_time = ? AND id < ?))')
-      binds.push(startTime, startTime, id)
+      binds.push(ts, ts, id)
     }
 
     const { results } = await c.env.DB.prepare(

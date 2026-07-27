@@ -66,7 +66,11 @@ export const themeRoutes = new Hono<AppEnv>()
 
   .use('*', authenticate)
 
-  /** The web client calls this on load; a 404 simply means "use the built-in palette". */
+  /**
+   * The web client calls this on load. An athlete who has never attached a phone has no
+   * palette to wear, which is ordinary rather than missing — so this answers `{ theme: null }`
+   * with a 200 and the client falls back to the built-in scheme without comment.
+   */
   .get('/', async (c) => {
     const row = await c.env.DB.prepare(
       'SELECT light_json, dark_json, source, updated_at FROM user_theme WHERE user_id = ?',

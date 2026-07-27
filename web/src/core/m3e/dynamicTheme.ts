@@ -20,10 +20,39 @@ export interface DynamicTheme {
 
 const STYLE_ELEMENT_ID = 'hh-dynamic-theme'
 
+/**
+ * The complete set of roles a personal scheme may carry — the UI palette and nothing else.
+ *
+ * The Worker already rejects anything outside this list, and this repeats it because the
+ * consequence of being wrong lands here: these values are written into a stylesheet. A chart
+ * series slot is not on the list and cannot be added to it by anything a phone uploads, which
+ * is the rule `contrast.test.ts` measures the palette against.
+ */
+const UI_ROLES = new Set([
+  'primary', 'onPrimary', 'primaryContainer', 'onPrimaryContainer',
+  'secondary', 'onSecondary', 'secondaryContainer', 'onSecondaryContainer',
+  'tertiary', 'onTertiary', 'tertiaryContainer', 'onTertiaryContainer',
+  'error', 'onError', 'errorContainer', 'onErrorContainer',
+  'background', 'onBackground', 'surface', 'onSurface',
+  'surfaceVariant', 'onSurfaceVariant',
+  'surfaceContainerLowest', 'surfaceContainerLow', 'surfaceContainer',
+  'surfaceContainerHigh', 'surfaceContainerHighest',
+  'surfaceDim', 'surfaceBright',
+  'outline', 'outlineVariant',
+  'inverseSurface', 'inverseOnSurface', 'inversePrimary',
+  'scrim', 'shadow',
+])
+
+/** Exported for the test that pins it against the token file and the Worker's own list. */
+export const dynamicRoles: ReadonlySet<string> = UI_ROLES
+
+const HEX = /^#[0-9a-fA-F]{6}$/
+
 const kebab = (role: string) => role.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
 
 function declarations(scheme: Record<string, string>): string {
   return Object.entries(scheme)
+    .filter(([role, hex]) => UI_ROLES.has(role) && HEX.test(hex))
     .map(([role, hex]) => `  --md-sys-color-${kebab(role)}: ${hex};`)
     .join('\n')
 }
