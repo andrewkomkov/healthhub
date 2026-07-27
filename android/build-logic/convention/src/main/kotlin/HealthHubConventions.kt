@@ -61,6 +61,10 @@ internal fun Project.configureCompose(extension: LibraryExtension) {
         add("implementation", libs.findLibrary("compose-ui-graphics").get())
         add("implementation", libs.findLibrary("compose-foundation").get())
         add("implementation", libs.findLibrary("compose-material3").get())
+        // Here rather than per feature: an icon is design-system vocabulary, and a module having
+        // to declare a dependency to draw a back arrow is how screens end up with a text button
+        // where a navigation icon belongs.
+        add("implementation", libs.findLibrary("compose-material-icons-core").get())
         add("implementation", libs.findLibrary("compose-ui-tooling-preview").get())
         add("debugImplementation", libs.findLibrary("compose-ui-tooling").get())
     }

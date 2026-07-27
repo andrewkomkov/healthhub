@@ -13,6 +13,14 @@ import { useEffect, useState } from 'react'
  */
 export interface ChartTheme {
   surface: string
+  /**
+   * The tonal container a panel is drawn on, two steps above the card.
+   *
+   * `surface` is the page; this is the bed. The Expressive treatment puts every plot inside a
+   * shaped container so the series sits *in* something, and the canvas has to know that colour
+   * to draw a gap ring around the cursor dot that matches what CSS painted underneath it.
+   */
+  bed: string
   inkPrimary: string
   inkSecondary: string
   inkMuted: string
@@ -66,6 +74,7 @@ function snapshot(version: number): ChartTheme {
 
   return {
     surface: read(styles, '--chart-surface', '#FFF8F5'),
+    bed: read(styles, '--md-sys-color-surface-container-highest', '#F1DFD6'),
     inkPrimary: read(styles, '--chart-ink-primary', '#211A15'),
     inkSecondary: read(styles, '--chart-ink-secondary', '#52443A'),
     inkMuted: read(styles, '--chart-ink-muted', '#857269'),

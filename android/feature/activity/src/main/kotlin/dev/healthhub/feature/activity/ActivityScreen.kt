@@ -10,8 +10,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.healthhub.core.designsystem.HealthHubType
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.model.RoutePoint
 import dev.healthhub.core.model.UnitSystem
@@ -63,8 +68,23 @@ internal fun ActivityScreen(onBack: () -> Unit, viewModel: ActivityViewModel = h
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(state.activity?.let { Format.sportLabel(it.sport) } ?: "Activity") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                title = {
+                    Text(
+                        state.activity?.let { Format.sportLabel(it.sport) } ?: "Activity",
+                        style = HealthHubType.titleLargeEmphasized,
+                    )
+                },
+                // An icon rather than the word "Back": the Expressive app bar expects a 48 dp
+                // touch target in the navigation slot, and a text button there both under-fills
+                // it and competes with the title for the eye.
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back to activities",
+                        )
+                    }
+                },
             )
         },
     ) { padding ->
@@ -261,6 +281,13 @@ private fun SummaryCard(activity: ActivityDetailDto, sport: String, units: UnitS
     }
 }
 
+/**
+ * One figure and its name.
+ *
+ * The value carries the Expressive *emphasised* weight and the label does not: on a card holding
+ * ten of these, the thing that has to be readable at a glance is the number, and the Expressive
+ * type scale exists precisely so that prominence is a role rather than a hand-picked size.
+ */
 @Composable
 private fun Stat(label: String, value: String) {
     Column {
@@ -269,7 +296,7 @@ private fun Stat(label: String, value: String) {
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(value, style = MaterialTheme.typography.titleMedium)
+        Text(value, style = HealthHubType.titleMediumEmphasized)
     }
 }
 

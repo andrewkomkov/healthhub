@@ -15,10 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
+import dev.healthhub.core.designsystem.GeneratedTokens
+import dev.healthhub.core.designsystem.LocalIsDark
 import dev.healthhub.core.designsystem.Spacing
-import dev.healthhub.core.designsystem.channelColor
 import dev.healthhub.core.network.ZoneDto
 import kotlin.math.roundToInt
 
@@ -29,10 +29,12 @@ import kotlin.math.roundToInt
  * channel's own hue rather than from the categorical series palette. Eight unrelated hues here
  * would imply the zones are unrelated categories, which is the opposite of what they are.
  *
- * The web client draws this from `chart.sequential` in the token file. The Kotlin generator does
- * not emit that ramp (only the CSS side does), so the ramp here is built by mixing the channel's
- * token colour with the surface — same idea, same source of truth for both endpoints, but not
- * literally the same steps. Emitting `chart.sequential` from `build.mjs` would close that gap.
+ * Both clients now draw the ramp from `chart.sequential` in the token file — `theme.ordinal` in
+ * the browser, [GeneratedTokens.sequentialStep] here — so a zone bar is literally the same step
+ * on both screens rather than merely the same idea. This used to mix the channel's own hue with
+ * the surface, which made zone 3 a different colour in the two clients and quietly broke
+ * Constitution Principle III. The ramp is single-hue on purpose: the channel is already named in
+ * the heading above the bars, so the colour is free to carry intensity instead of identity.
  */
 @Composable
 internal fun ZoneDistribution(
@@ -47,8 +49,7 @@ internal fun ZoneDistribution(
             val rows = zones.filter { it.kind == kind }.sortedBy { it.zoneIndex }
             val total = rows.sumOf { it.seconds }
             val longest = rows.maxOf { it.seconds }
-            val hue = channelColor(kind)
-            val floor = MaterialTheme.colorScheme.surfaceContainerHighest
+            val dark = LocalIsDark.current
 
             Text(
                 text = if (kind == "hr") "Heart rate" else "Power",
@@ -64,7 +65,7 @@ internal fun ZoneDistribution(
                     share = if (longest > 0) (zone.seconds / longest).toFloat() else 0f,
                     percent = if (total > 0) "${(zone.seconds / total * 100).roundToInt()}%" else Format.EM_DASH,
                     seconds = zone.seconds,
-                    colour = ordinal(floor, hue, position, rows.size),
+                    colour = GeneratedTokens.sequentialStep(position, rows.size, dark),
                 )
             }
         }
@@ -72,16 +73,10 @@ internal fun ZoneDistribution(
 }
 
 /**
- * A step on the ordinal ramp: the further into the zones, the closer to the channel's full
- * colour. Confined to the upper part of the mix so the first zone is still visible on the card.
+ * Taller than a hairline on purpose. The Expressive shape scale wants a track you can see the
+ * radius of; at 12 dp the fully rounded ends read as a chamfer instead of a capsule.
  */
-private fun ordinal(floor: Color, hue: Color, index: Int, count: Int): Color {
-    val fraction = if (count <= 1) 1f else index.toFloat() / (count - 1)
-    return lerp(floor, hue, ORDINAL_FLOOR + (1f - ORDINAL_FLOOR) * fraction)
-}
-
-private const val ORDINAL_FLOOR = 0.25f
-private val ROW_HEIGHT = 12.dp
+private val ROW_HEIGHT = 16.dp
 private val LABEL_WIDTH = 32.dp
 private val BOUND_WIDTH = 64.dp
 private val TIME_WIDTH = 64.dp

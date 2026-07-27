@@ -9,7 +9,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -22,6 +24,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.healthhub.core.designsystem.ExpressiveShapes
 import dev.healthhub.core.designsystem.GeneratedTokens
 import dev.healthhub.core.designsystem.LocalChartChrome
 import dev.healthhub.core.designsystem.channelColor
@@ -79,6 +82,10 @@ internal fun RouteMap(
 
     val context = LocalContext.current
     val chrome = LocalChartChrome.current
+    // The map is a container like the chart bed, so it wears the container colour rather than the
+    // page colour. It doubles as the casing under the route: a halo only reads if it is the
+    // colour of whatever the route is lying on.
+    val bed = MaterialTheme.colorScheme.surfaceContainerHighest
     val routeColour = channelColor("speed")
     val startColour = channelColor("elevation")
     val finishColour = channelColor("hr")
@@ -120,7 +127,7 @@ internal fun RouteMap(
      * restarted when the palette changes, which is what carries a Material You switch or a move
      * to dark onto the map rather than leaving it wearing yesterday's colours.
      */
-    LaunchedEffect(mapView, geometry, chrome, routeColour, tilesUrl) {
+    LaunchedEffect(mapView, geometry, chrome, bed, routeColour, tilesUrl) {
         val map = mapView.awaitMap()
         map.uiSettings.apply {
             isAttributionEnabled = tilesUrl.isNotBlank()
@@ -129,7 +136,7 @@ internal fun RouteMap(
             isTiltGesturesEnabled = false
         }
 
-        val style = map.awaitStyle(Style.Builder().fromJson(backgroundStyle(chrome.surface)))
+        val style = map.awaitStyle(Style.Builder().fromJson(backgroundStyle(bed)))
 
         if (tilesUrl.isNotBlank()) {
             val tiles = TileSet(TILEJSON_VERSION, tilesUrl).apply {
@@ -158,7 +165,7 @@ internal fun RouteMap(
             LineLayer("route-casing", ROUTE_SOURCE).withProperties(
                 PropertyFactory.lineCap("round"),
                 PropertyFactory.lineJoin("round"),
-                PropertyFactory.lineColor(chrome.surface.toArgb()),
+                PropertyFactory.lineColor(bed.toArgb()),
                 PropertyFactory.lineWidth(lineWidth * 2.5f),
                 PropertyFactory.lineOpacity(0.7f),
             ),
@@ -171,14 +178,14 @@ internal fun RouteMap(
                 PropertyFactory.lineWidth(lineWidth * 1.5f),
             ),
         )
-        style.addLayer(endpointLayer("route-start-dot", START_SOURCE, startColour, chrome.surface))
-        style.addLayer(endpointLayer("route-finish-dot", FINISH_SOURCE, finishColour, chrome.surface))
+        style.addLayer(endpointLayer("route-start-dot", START_SOURCE, startColour, bed))
+        style.addLayer(endpointLayer("route-finish-dot", FINISH_SOURCE, finishColour, bed))
         style.addLayer(
             CircleLayer(MARKER_SOURCE, MARKER_SOURCE).withProperties(
                 PropertyFactory.circleRadius(7f),
                 PropertyFactory.circleColor(routeColour.toArgb()),
                 PropertyFactory.circleStrokeWidth(3f),
-                PropertyFactory.circleStrokeColor(chrome.surface.toArgb()),
+                PropertyFactory.circleStrokeColor(bed.toArgb()),
             ),
         )
 
@@ -199,11 +206,15 @@ internal fun RouteMap(
         }
     }
 
+    // Shaped like every other container on the screen rather than left as a full-bleed rectangle.
+    // A GL surface does not respect a parent's rounded outline on its own, so the clip goes on
+    // the view itself; without it the map is the one square corner in a screen of capsules.
     AndroidView(
         factory = { mapView },
         modifier = modifier
             .fillMaxWidth()
             .height(MAP_HEIGHT)
+            .clip(ExpressiveShapes.extraLargeIncreased)
             .semantics { contentDescription = "Route map" },
     )
 }

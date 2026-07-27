@@ -47,6 +47,28 @@ export interface TelemetryChartsProps {
  * tunnel and dropout in the ride — the canvas silently ignores a `NaN` coordinate and simply
  * continues the path from the last good point.
  */
+/** The Expressive line is heavier than the token's base weight; the token is still the source. */
+const STROKE_EMPHASIS = 1.5
+
+const FILL_TOP_ALPHA = 0.28
+
+/**
+ * A token colour at a given alpha.
+ *
+ * `color-mix` would be tidier, but this value is handed to a canvas gradient stop rather than to
+ * CSS, and a gradient stop has to be a colour string the 2D context can parse itself. The token
+ * sheet publishes hex, so hex is what this widens; anything else is passed through and simply
+ * appears at full opacity rather than breaking the chart.
+ */
+function withAlpha(colour: string, alpha: number): string {
+  const hex = colour.trim()
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex
+  const r = Number.parseInt(hex.slice(1, 3), 16)
+  const g = Number.parseInt(hex.slice(3, 5), 16)
+  const b = Number.parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
 function toPlotData(values: Float64Array): (number | null)[] {
   const out = new Array<number | null>(values.length)
   for (let i = 0; i < values.length; i++) {
@@ -99,6 +121,25 @@ export function TelemetryCharts({
       const colour = theme.channel(panel.key)
       const isLast = index === panels.length - 1
 
+      /**
+       * The vertical wash under the line, anchored to the top of the *series* rather than the top
+       * of the plot. A walk whose speed never leaves the bottom third of its own axis would
+       * otherwise get only the transparent tail of the gradient and show no fill at all.
+       *
+       * Returned as a function because µPlot calls it after layout, which is the only moment the
+       * plotting area's pixel bounds are known — and it re-calls it on resize, so the gradient
+       * follows the chart instead of being baked at the width it was born at.
+       */
+      const wash = (u: uPlot, seriesIndex: number) => {
+        const scale = u.series[seriesIndex]?.scale ?? 'y'
+        const max = u.scales[scale]?.max
+        const top = max === undefined ? u.bbox.top : u.valToPos(max, scale, true)
+        const gradient = u.ctx.createLinearGradient(0, top, 0, u.bbox.top + u.bbox.height)
+        gradient.addColorStop(0, withAlpha(colour, FILL_TOP_ALPHA))
+        gradient.addColorStop(1, withAlpha(colour, 0))
+        return gradient
+      }
+
       const chart = new uPlot(
         {
           width,
@@ -109,7 +150,9 @@ export function TelemetryCharts({
           cursor: {
             sync: { key: sync.key, scales: ['x', null] },
             drag: { x: true, y: false, setScale: false, dist: 4 },
-            points: { size: 7, width: 2, stroke: () => colour, fill: () => theme.surface },
+            // The ring is the bed, not the page: the dot sits on the tonal container the panel
+            // is drawn in, and a gap ring only reads as a gap if it is that colour.
+            points: { size: 9, width: 3, stroke: () => colour, fill: () => theme.bed },
           },
           scales: { x: { time: false } },
           axes: [
@@ -137,9 +180,14 @@ export function TelemetryCharts({
             {
               label: panel.label,
               stroke: colour,
-              width: theme.lineWidth,
-              // A fill under every panel would stack five washes of colour on one screen;
-              // the line carries the shape and the colour carries the identity.
+              // Heavier than the token's base weight, round-capped, over a wash of the channel's
+              // own colour. The token is still the source; the Expressive treatment is the
+              // multiplier, and it is the same 1.5 the Kotlin side applies.
+              width: theme.lineWidth * STROKE_EMPHASIS,
+              // µPlot exposes the cap but not the join; it already joins round internally, so
+              // this is the whole of the round-stroke story on the web side.
+              cap: 'round',
+              fill: wash,
               points: { show: false },
               spanGaps: false,
             },
@@ -206,7 +254,15 @@ export function TelemetryCharts({
                 />
                 {panel.label}
               </span>
-              <span className="t-title-medium numeric">
+              {/* Tinted with the channel's own colour rather than a neutral: the pill is part
+                  of the direct labelling, so it carries the identity the swatch and the line
+                  already carry. */}
+              <span
+                className="t-title-medium-emphasized numeric hh-chart__readout"
+                style={{
+                  background: `color-mix(in srgb, var(--chart-channel-${panel.key}) 16%, transparent)`,
+                }}
+              >
                 {Number.isNaN(at) ? (panel.summary ?? '—') : panel.format(at)}
               </span>
             </figcaption>

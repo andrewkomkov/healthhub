@@ -94,6 +94,14 @@ body {
   font-weight: var(--md-sys-type-title-medium-weight);
   letter-spacing: var(--md-sys-type-title-medium-tracking);
 }
+/* The Expressive emphasised role: same size, heavier weight. Prominence is a role here, not a
+   hand-picked font-size, which is what keeps the phone and the browser agreeing. */
+.t-title-medium-emphasized {
+  font-size: var(--md-sys-type-title-medium-emphasized-size);
+  line-height: var(--md-sys-type-title-medium-emphasized-line-height);
+  font-weight: var(--md-sys-type-title-medium-emphasized-weight, 700);
+  letter-spacing: var(--md-sys-type-title-medium-emphasized-tracking);
+}
 .t-body-large {
   font-size: var(--md-sys-type-body-large-size);
   line-height: var(--md-sys-type-body-large-line-height);
@@ -425,6 +433,21 @@ body {
   border-radius: var(--md-sys-shape-full);
 }
 
+/*
+ * The plot has a container.
+ *
+ * A series on the bare card is a chart a spreadsheet would draw. Two tonal steps above the card
+ * — the card is `surface-container-low` — at the Expressive `large-increased` radius, so the
+ * plot reads as a component rather than as ink floating on a panel. The Kotlin client draws the
+ * identical bed on its canvas; this is the same decision expressed in the other medium.
+ */
+.hh-chart__canvas {
+  background: var(--md-sys-color-surface-container-highest);
+  border-radius: var(--md-sys-shape-large-increased);
+  padding: var(--hh-space-sm) 0;
+  overflow: hidden;
+}
+
 /* µPlot draws into a canvas it sizes itself; the wrapper only has to not fight it. */
 .hh-chart__canvas .uplot,
 .hh-chart__canvas .u-wrap {
@@ -436,14 +459,28 @@ body {
   font-family: var(--md-sys-type-font-family);
 }
 
-.u-select {
-  background: color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
-  border-radius: var(--md-sys-shape-small);
+.hh-chart__readout {
+  border-radius: var(--md-sys-shape-full);
+  padding: var(--hh-space-xs) var(--hh-space-md);
 }
 
+.u-select {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 16%, transparent);
+  border-radius: var(--md-sys-shape-medium);
+}
+
+/*
+ * The cursor is a component, not a hairline.
+ *
+ * µPlot draws it as a 1px bordered element, so the bar is made out of the border itself: a
+ * 4px-wide rounded stroke in the primary colour, which is the same shape the phone draws under
+ * the athlete's finger. `!important` because the library sets these inline.
+ */
 .u-cursor-x,
 .u-cursor-y {
-  border-color: var(--chart-ink-muted) !important;
+  border-color: color-mix(in srgb, var(--md-sys-color-primary) 28%, transparent) !important;
+  border-width: 4px !important;
+  border-radius: var(--md-sys-shape-full);
 }
 
 .u-cursor-pt {
@@ -461,11 +498,13 @@ body {
 
 /* --------------------------------------------------------------------------- map */
 
+/* The same radius and the same bed the Kotlin client clips its GL surface to, so the map is not
+   the one squarer corner in a screen of capsules. */
 .hh-map {
   width: 100%;
-  border-radius: var(--md-sys-shape-extra-large);
+  border-radius: var(--md-sys-shape-extra-large-increased);
   overflow: hidden;
-  border: 1px solid var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 .hh-map .maplibregl-ctrl-group {
@@ -566,9 +605,11 @@ body {
   text-align: right;
 }
 
+/* 16px, not 12: at the smaller height the fully rounded ends read as a chamfer rather than as
+   the capsule the Expressive shape scale intends. Matches ROW_HEIGHT on the phone. */
 .hh-zone-row__track {
   display: block;
-  height: 12px;
+  height: 16px;
   border-radius: var(--md-sys-shape-full);
   background: var(--md-sys-color-surface-container-highest);
   overflow: hidden;

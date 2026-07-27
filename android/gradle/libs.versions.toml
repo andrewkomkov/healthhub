@@ -52,6 +52,10 @@ compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview"
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
 # Pinned outside the BOM: the BOM tracks stable Material 3, and Expressive lives in alpha.
 compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+# The base set — the couple of hundred icons Material ships as standard, which is every icon
+# this app has ever needed. `-extended` is the ~5 MB catalogue of all of them and is still only a
+# catalogue entry: reach for it when a screen genuinely needs a glyph that is not in core.
+compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 compose-material-icons = { module = "androidx.compose.material:material-icons-extended" }
 
 lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
