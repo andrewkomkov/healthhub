@@ -352,7 +352,7 @@ describe('activities', () => {
     expect(body.activity.distanceM).toBeCloseTo(92_310.4)
   })
 
-  it('returns the source uid on the detail response, and only there', async () => {
+  it('returns the source uid on the detail response and in the feed', async () => {
     // The phone needs this to find the Health Connect session behind an activity before asking
     // for its GPS track. Without it the match falls back to start time plus source package,
     // which is ambiguous for the same walk recorded by two apps — and the imported route then
@@ -366,11 +366,13 @@ describe('activities', () => {
     const body = (await detail.json()) as { activity: { sourceUid: string } }
     expect(body.activity.sourceUid).toBe('hc-route-match')
 
-    // The feed carries one row per activity and is the hot path; the session id is of no use
-    // to it, so it stays off that response.
+    // It is on the feed too, which it deliberately was not until the route backfill existed:
+    // that pass asks "which of these workouts has no track, and which recording is each one"
+    // and would otherwise have to fetch every detail row to find out, or match by start time —
+    // the ambiguity this field was added to remove in the first place.
     const feed = await request('/api/activities', { headers: { cookie } })
     const { activities } = (await feed.json()) as { activities: Record<string, unknown>[] }
-    expect(activities[0]).not.toHaveProperty('sourceUid')
+    expect(activities[0]).toHaveProperty('sourceUid', 'hc-route-match')
   })
 
   it('is idempotent on the source id', async () => {

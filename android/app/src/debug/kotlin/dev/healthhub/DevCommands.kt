@@ -109,6 +109,32 @@ class SyncCommand @Inject constructor(private val engine: SyncEngine) : DevComma
     }
 }
 
+/**
+ * The route backfill on demand, without waiting for a sync.
+ *
+ * The pass a sync runs is deliberately small — five workouts, so that repairing history never
+ * costs the athlete today's ride. Verifying it on a device means running it until it says there
+ * is nothing left, which is what `budget` is for.
+ */
+class RouteBackfillCommand @Inject constructor(private val engine: SyncEngine) : DevCommand {
+    override val name = "routes"
+    override val usage =
+        "[--extra budget:s:<n>] — fill in GPS tracks for workouts synced before the routes " +
+            "permission was granted, and report how many are left"
+
+    override suspend fun run(args: Map<String, String>): Map<String, String> {
+        val budget = args["budget"]?.toIntOrNull()
+        val result = if (budget != null) engine.backfillRoutes(budget) else engine.backfillRoutes()
+        return mapOf(
+            "checked" to result.checked.toString(),
+            "imported" to result.imported.toString(),
+            "points" to result.points.toString(),
+            "disputed" to result.disputed.toString(),
+            "more" to result.more.toString(),
+        )
+    }
+}
+
 class FeedCommand @Inject constructor(private val api: HealthHubApi) : DevCommand {
     override val name = "feed"
     override val usage = "— fetch the first page of the feed and report what came back"
@@ -176,6 +202,7 @@ abstract class DevCommandsModule {
     @Binds @IntoSet abstract fun login(command: LoginCommand): DevCommand
     @Binds @IntoSet abstract fun logout(command: LogoutCommand): DevCommand
     @Binds @IntoSet abstract fun sync(command: SyncCommand): DevCommand
+    @Binds @IntoSet abstract fun routes(command: RouteBackfillCommand): DevCommand
     @Binds @IntoSet abstract fun feed(command: FeedCommand): DevCommand
     @Binds @IntoSet abstract fun theme(command: ThemeCommand): DevCommand
     @Binds @IntoSet abstract fun state(command: StateCommand): DevCommand

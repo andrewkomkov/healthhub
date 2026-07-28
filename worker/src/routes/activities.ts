@@ -18,13 +18,14 @@ import {
   str,
 } from '../lib/validate'
 
-const FEED_COLUMNS = `id, sport, title, start_time, tz_offset_minutes, elapsed_seconds,
-  moving_seconds, distance_m, elevation_gain_m, avg_speed_mps, avg_hr_bpm, has_gps,
-  route_polyline, bounds_json, source_package, source_count, visibility,
+const FEED_COLUMNS = `id, source_uid, sport, title, start_time, tz_offset_minutes,
+  elapsed_seconds, moving_seconds, distance_m, elevation_gain_m, avg_speed_mps, avg_hr_bpm,
+  has_gps, route_polyline, bounds_json, source_package, source_count, visibility,
   archived_reason, visibility_locked`
 
 interface FeedRow {
   id: string
+  source_uid: string
   sport: string
   title: string
   start_time: number
@@ -47,6 +48,17 @@ interface FeedRow {
 
 const feedItem = (row: FeedRow) => ({
   id: row.id,
+  /*
+   * The Health Connect record this row was ingested from.
+   *
+   * In the feed because the phone's route backfill has to ask "which of these workouts has no
+   * track, and which recording is each one" in a single pass. The alternative it replaced was
+   * matching a feed row back to a session by start time and source package, which is ambiguous
+   * exactly when it matters: the same walk recorded by two apps is two sessions sharing a start
+   * instant. It is the athlete's own identifier for their own recording, and the detail response
+   * has carried it since the route import needed the same thing.
+   */
+  sourceUid: row.source_uid,
   sport: row.sport,
   title: row.title,
   startTime: row.start_time,

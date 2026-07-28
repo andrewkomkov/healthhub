@@ -140,6 +140,8 @@ data class UploadedActivity(val id: String, val telemetryUploadPath: String)
 @Serializable
 data class FeedActivityDto(
     val id: String,
+    /** The Health Connect record behind this row; the route backfill matches on it. */
+    val sourceUid: String? = null,
     val sport: String,
     val title: String,
     val startTime: Long,

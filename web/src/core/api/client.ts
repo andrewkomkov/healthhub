@@ -64,6 +64,8 @@ export type ArchivedReason = 'duplicate' | 'manual' | null
 
 export interface FeedActivity {
   id: string
+  /** The Health Connect record behind this row. The browser does not use it; the phone does. */
+  sourceUid?: string
   sport: string
   title: string
   startTime: number

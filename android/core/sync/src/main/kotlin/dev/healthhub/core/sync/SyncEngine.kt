@@ -7,6 +7,7 @@ import dev.healthhub.core.database.PendingActivity
 import dev.healthhub.core.database.StagingDao
 import dev.healthhub.core.database.SyncStateEntity
 import dev.healthhub.core.healthconnect.HealthConnectSource
+import dev.healthhub.core.healthconnect.RouteState
 import dev.healthhub.core.healthconnect.HealthRecordRegistry
 import dev.healthhub.core.model.DistanceUnit
 import dev.healthhub.core.model.RoutePoint
@@ -224,6 +225,15 @@ class SyncEngine @Inject constructor(
             recordCursor(to)
         }
 
+        // Only once everything today is uploaded, and only when nothing failed: a quota spent on
+        // history is a quota the next sync does not have, and there is no point repairing last
+        // March while this morning's ride is still stuck.
+        val backfill = if (failures.isEmpty()) {
+            runCatching { backfillRoutes() }.getOrNull()
+        } else {
+            null
+        }
+
         val report = SyncReport(
             startedAt = startedAt,
             finishedAt = System.currentTimeMillis(),
@@ -245,6 +255,14 @@ class SyncEngine @Inject constructor(
             unhandledTypes = unhandled.sortedBy { entry ->
                 UNHANDLED_ORDER.indexOfFirst { entry.startsWith(it) }.takeIf { it >= 0 }
                     ?: UNHANDLED_ORDER.size
+            },
+            // Said out loud rather than left to be noticed on a map days later. A backfill that
+            // found nothing says nothing — this line appears only when a workout that had no
+            // track now has one.
+            message = backfill?.takeIf { it.imported > 0 }?.let {
+                val more = if (it.more) " More to come on the next sync." else ""
+                val tracks = if (it.imported == 1) "track" else "tracks"
+                "Filled in ${it.imported} GPS $tracks for older workouts.$more"
             },
         )
 
@@ -528,6 +546,132 @@ class SyncEngine @Inject constructor(
     }
 
     /**
+     * What a pass of [backfillRoutes] did.
+     *
+     * `checked` is workouts asked about, not sessions read: a row whose recording is not on this
+     * phone costs one lookup and nothing else.
+     */
+    data class RouteBackfill(
+        val checked: Int,
+        val imported: Int,
+        val points: Int,
+        /** Tracks that would have rewritten the workout's distance. Left for the athlete. */
+        val disputed: Int,
+        /** True while there may be more to do — the budget ran out before the candidates did. */
+        val more: Boolean,
+    )
+
+    /**
+     * Fills in GPS tracks for workouts that were synced without one, a workout at a time.
+     *
+     * Two things have to be true at once for a track to be missing, and both are ordinary. The
+     * platform hands a route over only to an app holding `READ_EXERCISE_ROUTES` — which the
+     * athlete grants in Health Connect's own settings and *cannot* be asked for from here — so
+     * everything synced before that switch was flipped has no track and never will, because a
+     * sync only reads forward from its cursor. That is what this repairs: the recordings are
+     * still in Health Connect, the permission is now held, and nobody is going to open two
+     * hundred workouts and tap "import" on each.
+     *
+     * It asks the *server* which workouts are missing a track rather than deciding locally,
+     * because that is where the answer lives — a phone that reinstalled has no record of what it
+     * once uploaded. `sourceUid` on the feed row is what makes the match exact; matching a row
+     * back to a session by start time is ambiguous precisely for the workouts that matter, the
+     * ones two apps recorded.
+     *
+     * Deliberately budgeted rather than exhaustive. Each import is ten Health Connect reads and
+     * one upload, and a quota spent here is a quota not available to the next sync — so a pass
+     * does a handful, says whether there is more, and the next sync continues. Nothing here is
+     * destructive: [importRoute] recomputes the duplicate verdict, so a recording the athlete's
+     * source order set aside stays set aside.
+     */
+    suspend fun backfillRoutes(budget: Int = ROUTE_BACKFILL_BUDGET): RouteBackfill {
+        if (healthConnect.availability != HealthConnectSource.Availability.AVAILABLE) {
+            return RouteBackfill(0, imported = 0, points = 0, disputed = 0, more = false)
+        }
+
+        var checked = 0
+        var imported = 0
+        var points = 0
+        var disputed = 0
+        var cursor: String? = null
+        var pages = 0
+
+        do {
+            val page = runCatching { api.feed(cursor, FEED_PAGE) }.getOrNull() ?: break
+            // Rows the phone can act on: no track yet, and an identifier to find the recording
+            // by. A row uploaded before the field existed is skipped rather than guessed at.
+            val candidates = page.activities.filter { !it.hasGps && !it.sourceUid.isNullOrBlank() }
+
+            for (activity in candidates) {
+                if (imported >= budget) {
+                    return RouteBackfill(checked, imported, points, disputed, more = true)
+                }
+                val sourceUid = activity.sourceUid ?: continue
+                checked++
+                _progress.value = Progress.Running(imported, budget, "Looking for GPS tracks")
+
+                val session = runCatching { healthConnect.readSession(sourceUid) }
+                    .getOrNull() ?: continue
+                val available = healthConnect.routeState(session) as? RouteState.Available ?: continue
+                // One fix is not a line. Importing it would rewrite the telemetry to say the
+                // workout has a track and still leave the map with nothing to draw.
+                if (available.points.size < MIN_ROUTE_POINTS) continue
+
+                /*
+                 * A track that covers a different distance from the one already on the screen is
+                 * not a fill-in, it is a correction — and a correction made to two hundred
+                 * workouts while nobody is looking is how an athlete's history quietly changes
+                 * shape. `Metrics.reconcileDistance` would decide between them, honestly and per
+                 * activity, and the detail screen says out loud which it chose. So a disputed
+                 * track is left for the athlete to import there, by hand, with that sentence
+                 * under it. A track that agrees is only ever adding the line to the map.
+                 */
+                val stored = activity.distanceM
+                val covered = trackMetres(available.points)
+                if (stored != null && stored > 0 && covered > 0 &&
+                    !agreesOnDistance(covered, stored)
+                ) {
+                    disputed++
+                    continue
+                }
+
+                runCatching { importRoute(sourceUid, available.points) }
+                    .onSuccess {
+                        imported++
+                        points += available.points.size
+                    }
+            }
+
+            cursor = page.nextCursor
+            pages++
+        } while (cursor != null && pages < FEED_PAGE_LIMIT)
+
+        _progress.value = Progress.Idle
+        return RouteBackfill(checked, imported, points, disputed, more = cursor != null)
+    }
+
+    /** How far the track itself goes, by the same arithmetic the ingest measures a ride with. */
+    private fun trackMetres(route: List<RoutePoint>): Double {
+        var total = 0.0
+        for (i in 1 until route.size) {
+            total += Metrics.haversineMetres(
+                route[i - 1].lat,
+                route[i - 1].lon,
+                route[i].lat,
+                route[i].lon,
+            )
+        }
+        return total
+    }
+
+    /** The reconciliation band, read the same way round as `Metrics.agreesWithin`. */
+    private fun agreesOnDistance(candidate: Double, expected: Double): Boolean {
+        val correction = expected / candidate
+        return correction > Metrics.MIN_DISTANCE_CORRECTION &&
+            correction < Metrics.MAX_DISTANCE_CORRECTION
+    }
+
+    /**
      * Re-ingests one workout with a GPS track the athlete has just granted.
      *
      * This is the second half of the per-activity route flow (R-015). The first half happens on
@@ -695,6 +839,22 @@ class SyncEngine @Inject constructor(
     }
 
     private companion object {
+        /**
+         * Imports per backfill pass.
+         *
+         * Ten Health Connect reads and one upload each, so this is the number that decides how
+         * much of the quota a sync spends on history rather than on today. Five a sync clears a
+         * year of walking in a fortnight of ordinary use, and nobody waits for it.
+         */
+        const val ROUTE_BACKFILL_BUDGET = 5
+
+        /** Feed pages the backfill will page through before leaving the rest for next time. */
+        const val FEED_PAGE_LIMIT = 6
+        const val FEED_PAGE = 50
+
+        /** Below this there is no line to draw — `Route.geometry` drops such a segment. */
+        const val MIN_ROUTE_POINTS = 2
+
         const val CURSOR_KEY = "ExerciseSession"
         const val PREVIEW_POINTS = 2_000
 
