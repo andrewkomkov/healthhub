@@ -27,11 +27,11 @@ placeholder. Everything else is polish by comparison.
 | Step | Agent | Work | State |
 |---|---|---|---|
 | 1 | web | `.hht` reader: `ArrayBuffer` → typed-array views, no parse pass. Validate against the golden fixture the Kotlin codec is tested with | **done** — `web/src/core/telemetry/hht.ts`, pinned to `fixtures/hht/golden-v1.hht` from both sides |
-| 2 | web | µPlot wrapper themed entirely from generated tokens: stacked aligned series, time↔distance axis switch, shared cursor, range selection | **done** — `web/src/core/charts/` |
-| 3 | web | MapLibre GL with a token-derived style; route drawn with gaps preserved, marker driven by the chart cursor | **done** — `web/src/core/map/`; a basemap appears only if `VITE_MAP_TILES_URL` is set |
+| 2 | web | µPlot wrapper themed entirely from generated tokens: one channel at a time behind chips, time↔distance axis switch, cursor, range selection | **done** — `web/src/core/charts/`; the stack of five panels was replaced by one chart and a chip row, and the min-max envelope by bucket means |
+| 3 | web | MapLibre GL with a token-derived style; route drawn with gaps preserved, marker driven by the chart cursor | **done** — `web/src/core/map/`; OpenFreeMap vector basemap by default, `VITE_MAP_TILES_URL` overrides it with a style or a raster template, `none` turns it off |
 | 4 | web | Detail route: summary, map, charts, splits table, zone distribution. Preview telemetry paints immediately, full resolution swaps in | **done** — `web/src/features/activity/` |
-| 5 | android | Same surface with MapLibre Native and a Compose canvas chart from `core:designsystem` primitives | **compiles, unit tests green, never run** — `android/feature/activity/`; charts, map, splits, zones, range selection and two ADB commands. `RouteGeometryTest` and `TelemetryAnalysisTest` pass |
-| 6 | device-qa | Open a real ride on the Pixel and in the browser; confirm identical figures and smooth panning | next — the APK builds; install it and compare `content call --method activity` against the same activity in the browser |
+| 5 | android | Same surface with MapLibre Native and a Compose canvas chart from `core:designsystem` primitives | **done, and drawn on a Pixel 8** — `android/feature/activity/`; charts, map, splits, zones, range selection and two ADB commands. The chart is now one channel at a time behind chips, reduced to bucket means; the summary is a grid of tiles |
+| 6 | device-qa | Open a real ride on the Pixel and in the browser; confirm identical figures and smooth panning | **phone half done** — a real 41 km ride and several walks opened on the Pixel: tiles, chips, scrub, map and basemap all correct. The browser half is still unverified: the deployment is live but nobody has signed into it and compared the two side by side |
 
 **Done when**: a 100k-sample activity is interactive within 3 s, chart cursor moves the map
 marker, a range selection reports statistics, and an indoor workout shows charts with an
@@ -40,8 +40,14 @@ explanatory state instead of an empty map.
 **Watch for**: the codec is implemented twice on purpose. If the TypeScript reader disagrees
 with the Kotlin writer, the shared fixture must fail — fix the fixture first if it does not.
 
-**Still open on the web side**: the map has no basemap unless a deployment configures a tile
-source, and the athlete cannot yet colour the route by a channel. Neither blocks step 5.
+**Still open on the web side**: the athlete cannot yet colour the route by a channel.
+
+**Settled late, on a device**: the pace axis used to bottom out at 122:54 /km, because a
+commute standing at traffic lights has a *quartile* of stopped samples rather than a tail — the
+Tukey fence sits underneath them. Both clients now floor the speed axis at the moving threshold.
+And both reduce a channel to the mean of 220 buckets instead of the min-max envelope: the
+envelope kept every one-second spike and rendered a five-hour ride as a brush of ink with no
+shape in it.
 
 ---
 
@@ -75,10 +81,11 @@ access is signature-level and unavailable to third-party apps.
 
 | Step | Agent | Work | State |
 |---|---|---|---|
-| 1 | android | "Import route" on activity detail → `REQUEST_EXERCISE_ROUTE` with the session id | **compiles, never run** — `core:healthconnect/ExerciseRouteContract.kt` wraps the SDK's contract (never the raw intent — it does not exist below API 34), and `feature/activity/RouteCard.kt` is the action |
-| 2 | android | Ingest the returned track, recompute polyline, bounds and distance, re-upload | **compiles, `DistanceReconciliationTest` green, never run** — `SyncEngine.importRoute` re-reads the session and runs the *same* `ingest` a sync runs, so there is no second implementation. `Metrics.reconcileDistance` decides whether the track may be the activity's distance |
-| 3 | android | Surface honestly when a source wrote no route at all — that is data absence, not a permission problem | **compiles, `RouteImportStateTest` green, never run** — `RouteImportState` keeps "no track recorded", "consent needed", "not on this phone" and "no Health Connect" apart, decided from `exerciseRouteResult` *before* anything is asked |
-| 4 | device-qa | Import a route on a real ride; confirm the polyline appears on both clients | next — `content call --method route-status --extra id:s:<activityId>` prints which of the four states applies without touching the glass |
+| 1 | android | "Import route" on activity detail → `REQUEST_EXERCISE_ROUTE` with the session id | **run on a device** — `core:healthconnect/ExerciseRouteContract.kt` wraps the SDK's contract (never the raw intent — it does not exist below API 34), and `feature/activity/RouteCard.kt` is the action |
+| 2 | android | Ingest the returned track, recompute polyline, bounds and distance, re-upload | **run on a device, 137 tracks** — `SyncEngine.importRoute` re-reads the session and runs the *same* `ingest` a sync runs, so there is no second implementation. `Metrics.reconcileDistance` decides whether the track may be the activity's distance |
+| 3 | android | Surface honestly when a source wrote no route at all — that is data absence, not a permission problem | **run on a device** — `RouteImportState` keeps "no track recorded", "consent needed", "not on this phone" and "no Health Connect" apart, decided from `exerciseRouteResult` *before* anything is asked |
+| 4 | device-qa | Import a route on a real ride; confirm the polyline appears on both clients | **done on the phone** — `route-status` printed the four states on real recordings, and the maps appeared. Confirmed on the browser side only that the same rows carry a polyline |
+| 5 | android | Fill in tracks for everything already synced without one, a workout at a time | **done, 137 tracks on a Pixel** — `SyncEngine.backfillRoutes` asks the server which workouts have no track, matches each to its Health Connect record by `sourceUid` and re-ingests through the same `importRoute`. Runs at the end of every sync with a budget of five, or on demand over ADB (`routes`). A track whose length disagrees with the stored distance is **not** imported: that is a correction, not a fill-in, and a correction made to two hundred workouts unattended is how a history quietly changes shape. Sixty such are waiting for the athlete on the detail screen |
 
 **Done when**: a ride with a recorded track shows its route, and one without says so clearly
 rather than looking broken.
@@ -229,21 +236,24 @@ cost. DuckDB does **not** go in the Worker — see R-014.
 
 ## Known open items
 
-Checked against the code on 2026-07-27, after the first whole-project Gradle run: `:app:assembleDebug`
-succeeds and `./gradlew test` reports 111 tests green across nine modules. Anything here is
-genuinely missing, not merely undocumented. "Never run" now means never run *on a device* — it no
-longer means never compiled.
+Checked against the code on 2026-07-28, after a session spent on a Pixel 8 rather than in a
+build: `:app:assembleDebug`, `./gradlew test lint`, `npm run typecheck`, 420 tests across the
+worker and the web, and everything below opened by hand on the phone. Anything here is genuinely
+missing, not merely undocumented.
 
 | Item | Where |
 |---|---|
 | `deploy` workflow red — missing `CLOUDFLARE_API_TOKEN` | GitHub → Secrets → Actions |
+| **Migrations are applied by hand, and nothing notices when they are not.** `0006` and `0007` were missing on the remote D1 while a Worker that reads `sleep_sessions` was live, so every sleep request answered 500 and the health screen said "could not load your health data". Applied on 2026-07-28. The deploy step should run `d1 migrations apply --remote` before it uploads, and until it does, this will happen again | Session 6, with the deploy workflow |
+| The new web surfaces — basemap, one-channel chart, figure-first cards, stat tiles — are deployed but have never been seen in a browser under a signed-in account. The phone half of every one of them was checked by hand | Session 1 step 6 |
 | ~~Activity detail has never been drawn on a screen~~ — **drawn on a Pixel 8**, real walk, summary and pace chart correct. It exposed two defects: an empty chart on any workout with fewer samples than the chart has columns (fixed, `ChartSeriesTest`), and the moving-time disagreement below | Session 1 step 6 |
 | ~~The Android archive and source screens have never been exercised~~ — **verified over ADB on a Pixel**: flipping source priority and re-syncing 101 sessions moved the representative between Google Fit and the bike computer's own app, and a manual restore survived the sync with `locked=true`. Nothing was deleted. The screens themselves were driven by command, not by finger | Session 2 step 5 |
 | No detail-screen entry point for archive/restore on Android: `feature:activity` has no action seam a second module can contribute to | Session 2 step 4 |
-| No activity has a GPS track yet — the import path compiles but has never run against a real recording | Session 3, step 4 |
+| ~~No activity has a GPS track yet~~ — **137 tracks imported on a Pixel**, and the maps draw. The lesson underneath: `READ_EXERCISE_ROUTES` was already granted, so the platform hands routes over with no confirmation at all — everything synced before the athlete flipped that switch simply never got one, and a sync only reads forward. `backfillRoutes` is what repairs it | Session 3 step 5 |
+| The route backfill leaves sixty workouts alone, because their track disagrees with the stored distance by more than the reconciliation band. Each needs the athlete on the detail screen, where the outcome is explained. There is no "review these sixty" surface | Session 3 follow-up |
 | A route cannot be imported onto an archived duplicate: the re-upload carries the duplicate verdict, and `GET /api/activities/:id` does not return `duplicateOf`, so the screen refuses rather than risk resurrecting the recording. Returning `duplicateOf` and `sourceUid` on the detail route would close it | Session 3 follow-up |
 | `POST /api/auth/login` still carries the raw password beside the proof, so a pre-amendment account can be migrated. It comes out once every account has signed in once — three client edits and one Worker edit | Session 6 follow-up |
-| `feature:settings` has a build file and no source — it contributes no route, so `healthhub://settings` resolves to nothing | Session 2 or 6 |
+| `feature:settings` has a build file and no source, so `healthhub://settings` resolves to nothing. It is no longer *reachable* — the app menu is built from `NavContribution.menuEntries`, and a module with no source registers none — but the empty module and its `Destination` are still there | Session 2 or 6 |
 | The Android health surfaces compile but have never been drawn on a screen. `feature:about` is deliberately trivial and stays that way — it is the SC-012 proof, re-verified by reading: attaching it cost a `Destination` in `core:navigation`, an `include`, and one `:app` dependency line, and no `feature:*` file names it | Session 4 step 5 |
 | No web health surface: sleep, HRV and readiness exist on Android only, though `/health` on the web already hosts the analytics console | Session 4 step 4 |
 | The hypnogram is uploaded to R2 and never read back — the screens draw stage totals, not the interval detail | Session 4 follow-up |

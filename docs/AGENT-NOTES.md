@@ -146,17 +146,36 @@ feature layer — a `Destination` in `core:navigation`, an `include` in `setting
 one `implementation(project(...))` in `:app`. `feature:about` exists solely to keep that number
 from growing; if it ever does, that module is what notices.
 
-**The registry attaches whole screens and nothing smaller.** `NavContribution` lets a module add
-a *route*; there is no equivalent for adding an *action to somebody else's screen*, and that gap
-is where session 2 step 4 stopped. Archive-and-restore belongs on the activity detail screen,
+**A route that no module serves is a crash, not a dead link.** `Destination` is sealed and lives
+in `core:navigation`, so a route value exists as soon as somebody writes it there — but the graph
+only contains what a `NavContribution` registered. `Destination.Settings` has existed for months;
+`feature:settings` is an empty directory with no Kotlin file in it. A menu that listed the
+destinations by hand therefore offered Settings, and tapping it threw `IllegalArgumentException:
+Navigation destination that matches route settings cannot be found in the navigation graph`.
+The menu is now built from `NavContribution.menuEntries` and provided through `LocalNavMenu`, so
+only a module that registered a screen can offer a way into it — the failure is not fixed, it is
+unrepresentable. A feature declares its own entries (`feature:sources` declares two, the source
+order and the archive), `:app` collects and sorts them, and `feature:feed` draws whatever it is
+handed without naming a single destination.
+
+**The registry still attaches whole screens and one menu item, nothing smaller.** `NavContribution`
+lets a module add a *route* and now a *menu entry*; there is still no equivalent for adding an
+*action to somebody else's screen*, and that gap is where session 2 step 4 stopped.
+Archive-and-restore belongs on the activity detail screen,
 but `ActivityScreen` is `internal` to `feature:activity` and has no slot a second module can put
 a button into — so the action exists in `feature:sources` (the archive screen, and the `restore`
 and `set-aside` ADB commands) while the detail screen still cannot offer it. The fix is one more
 multibinding beside `NavContribution`: a `DetailAction` set declared in `core:navigation`,
-collected by `feature:activity` and rendered in its top bar. That is a single edit to an existing
-feature, made once, after which every later module attaches an action the way it already attaches
-a route. Do it before the next feature needs the same thing — this is the second registry the
-architecture wants, not a workaround.
+collected by `feature:activity` and rendered in its top bar — the same shape `menuEntries` now
+has, so copy that. Do it before the next feature needs the same thing.
+
+**The icon set is `material-icons-extended`, and it is on the convention plugin.** The core set
+is a back arrow, a search glass and about twenty others: no heart, no stopwatch, no mountain,
+which is most of the alphabet a workout is written in. Every icon is its own class, so R8 keeps
+only what is referenced — the debug build carries the lot and the release build does not. The web
+client cannot do the same thing (an icon font is 300 kB against a 200 kB bundle), so it draws
+eleven paths by hand in `core/m3e/Icon.tsx` at the same 24-grid proportions. Adding a metric to
+one client means adding its mark to both, or the two stop reading as one product.
 
 **`viewModelScope` is cancelled *before* `onCleared()` runs.** `ViewModel.clear()` closes its
 closeables — the scope is one of them — and only then calls `onCleared`, so any job launched
@@ -176,6 +195,14 @@ must be called after the map is ready rather than at construction. Geometry is h
 GeoJSON **text** across JNI — `RouteMap` builds it into one `StringBuilder` and thins the
 route to a vertex budget first, because a hundred thousand coordinate pairs is several
 megabytes of string on the frame that opens the screen.
+
+**`MapLibreMap.setStyle` only ever calls back on success.** A style URL that fails — no
+network, a 404, a captive portal — invokes `OnStyleLoaded` never, so a `suspendCancellableCoroutine`
+wrapped around it suspends forever and the screen shows a shaped container with nothing inside
+it, which reads exactly like a bug in the drawing code. The other half of the pair is
+`MapView.addOnDidFailLoadingMapListener`; a style that neither loads nor fails is the caller's
+`withTimeoutOrNull`. Both are why `RouteMap.awaitStyle` returns `Style?` and the composable
+falls back to the inline token style. Same failure, same fix, as the web client's `load` event.
 
 **Kotlin `when` branches with braces are blocks, not lambdas.** `"hr" -> { value -> … }` inside
 a `when` that is supposed to produce a `(Double) -> String` is a parse ambiguity you do not
@@ -405,6 +432,15 @@ setWorkerUrl(workerUrl)
 `?worker&url` and not `?url`: the plain form copies the file without its `maplibre-gl-shared`
 import, which fails the same silent way.
 
+**The map's `load` event never fires if the style does not arrive.** `load` is raised from the
+render loop the first frame `map.loaded()` is true, and a style that 404s or hangs never gets
+there — so everything hung off `on('load')`, which is the whole route, silently never happens.
+That was harmless while the style was a local object; it is not now that the default basemap is
+fetched from OpenFreeMap. `RouteMap` therefore treats a pre-`load` `error` and a timeout the
+same way: `setStyle(localStyle, {diff: false})`, whose `load` *does* fire, and the ride is drawn
+on the product's surface colour instead. Tile and glyph errors raise `error` too, so the handler
+has to be guarded on "has the style settled yet" rather than acting on every error it sees.
+
 **µPlot treats `null` as a gap and `NaN` as a coordinate.** The codec uses `NaN` for "not
 recorded", and canvas quietly ignores a `NaN` coordinate — so the path continues from the last
 good point and every tunnel renders as a straight line. Convert to `null` before plotting.
@@ -483,6 +519,17 @@ each had this, because the second was copied from the first, so both now come fr
 again" that un-latches. `paging.test.tsx` drives a stub observer and pins the call count; both
 guards were confirmed by removing them and watching it go red (six requests, not one).
 
+**A single stored fix is a track by every check except the one that matters.** `Route.geometry`
+drops a segment of fewer than two points — one fix draws nothing, and keeping it puts a stray dot
+on the map — so it returns no bounds and the map renders nothing. Both detail screens used to
+decide *whether to show a map* on a different question ("are there any positions"), and a
+recording with one fix answered yes to that and no to the map's, so the screen showed neither the
+map nor the card that explains its absence: a gap between two cards and no way to tell it from a
+rendering fault. Both now decide from the geometry itself and pass the fix count into the
+explanation, because "the recorder stored one position" and "this workout has no GPS" are
+different sentences and only one of them is true. Google Fit writes exactly this for a ride it
+picked up from another app: `hasGps: true`, `routePolyline` one point long.
+
 **`role="img"` on a container hides everything inside it.** `RouteMap` carried it, which was a
 tidy way to name the map and an accidental way to remove MapLibre's own zoom buttons and its
 keyboard-pannable canvas from the accessibility tree — the subtree of an `img` is
@@ -512,6 +559,7 @@ fails on a real ride in front of a person, months later.
 | Rule | Kotlin | TypeScript |
 |---|---|---|
 | Distance axis, range statistics | `feature/activity/TelemetryAnalysis.kt` | `web/src/core/telemetry/analysis.ts` |
+| Chart reduction — bucket means | `feature/activity/ChartSeries.kt` | `web/src/core/charts/buckets.ts` |
 | Route segmentation and gap detection | `feature/activity/RouteGeometry.kt` | `web/src/core/map/route.ts` |
 | Number and unit formatting | `feature/activity/Format.kt` | `web/src/core/format.ts` |
 | Password pre-hash | `core/network/PasswordProofs.kt` | `web/src/features/auth/prehash.ts` |
@@ -533,13 +581,25 @@ this reason.
 The constants that must move together:
 
 - `MOVING_SPEED_THRESHOLD_MPS = 0.5` — also `Metrics.MOVING_SPEED_THRESHOLD_MPS`, where it is
-  `private`, which is why it is written out a third time rather than imported.
+  `private`, which is why it is written out a third time rather than imported. Both detail
+  screens now floor the *speed axis* here as well, and for a reason the fences cannot cover: a
+  commute that stands at lights for two fifths of its samples has a whole quartile of stopped
+  speeds, so the Tukey fence sits underneath them and the bottom of a pace axis still reads
+  122:54 /km. The floor is applied after the range padding on both sides — `axisRange`'s `floor`
+  argument, `ChartSeries.axisFloor` — because padding under it puts the bottom back at half an
+  hour per kilometre. A channel that never crosses the threshold at all keeps its own range.
 - `ELEVATION_NOISE_THRESHOLD_M = 1.0` — same story.
 - The distance reconciliation band, `0.8 < correction < 1.25`. On the Kotlin side this now has
   exactly one definition — `Metrics.MIN_DISTANCE_CORRECTION` / `MAX_DISTANCE_CORRECTION`, which
   `TelemetryAnalysis` references rather than repeats, because the ingest path applies the same
   band when it decides whether an imported GPS track may stand in for a source's own distance.
   The TypeScript copy is still a copy.
+- `BUCKETS = 220` — the number of points a chart is reduced to, `ChartSeries.BUCKETS` and
+  `CHART_BUCKETS`. Two clients smoothing one ride differently are two different rides, and the
+  disagreement is invisible until the two are held side by side. The reduction is the **mean** of
+  each bucket on both sides; it used to be the min-max envelope, which kept every one-second
+  spike and rendered a five-hour ride as a solid brush of ink with no shape in it. The extremes
+  are still reported where they are read as numbers — the summary card and the range statistics.
 - `MAX_PLAUSIBLE_SPEED_MPS = 60`, `MAX_PLAUSIBLE_JUMP_M = 2000`. A fixture for either twin has to
   be plausible **at its own sample rate**, and this is easy to get wrong: 0.001° between fixes is
   132 m at 50°N, which one second apart is 475 km/h. `RouteGeometryTest` had exactly that, so

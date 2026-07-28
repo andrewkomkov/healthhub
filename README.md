@@ -30,7 +30,7 @@ Android app  ──HTTPS──►  Cloudflare Worker  ──►  D1   (accounts,
                                      (feed, maps, charts — analysis in-browser)
 ```
 
-Three rules hold this together:
+Four rules hold this together:
 
 1. **Analysis runs on your device**, never on a server. Splits, heart-rate zones, moving
    time and smoothing are computed on the phone at ingest; interactive range statistics are
@@ -39,6 +39,9 @@ Three rules hold this together:
    PostgreSQL and ClickHouse are explicitly out.
 3. **One design language.** Android and web both render Material 3 Expressive from a single
    shared token source — including the charts and map overlays.
+4. **Nothing that needs an account.** The map draws OpenStreetMap data through OpenFreeMap,
+   which asks for no registration and no key; point `VITE_MAP_TILES_URL` (or `hh_map_tiles_url`)
+   at your own tiles if you would rather, or at `none` to talk to nobody at all.
 
 These are not preferences; they are enforced by the
 [project constitution](.specify/memory/constitution.md), which every change is checked
@@ -46,9 +49,15 @@ against.
 
 ## Status
 
-Early. The first slice — workout sync, activity feed, route maps, multi-series charts,
-splits and zones — is under construction. Sleep, HRV and recovery; power curve and training
-load; privacy zones and GPX/FIT export are specified and queued behind it.
+Early, but running. The first slice — workout sync, the activity feed, route maps over an
+openly licensed basemap, scrubbable charts, splits and zones — works on a real phone against a
+real deployment: a year of Health Connect history, GPS tracks filled in a workout at a time, and
+every figure computed on the device. Sleep, HRV and recovery are built on Android and have no
+web half yet. Power curve and training load, privacy zones and GPX/FIT export are specified and
+queued behind that.
+
+What is *not* yet true is written down rather than glossed over — see the known open items at
+the end of [the roadmap](docs/ROADMAP.md).
 
 ## Getting started
 
