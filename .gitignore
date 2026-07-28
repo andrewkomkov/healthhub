@@ -54,3 +54,10 @@ google_health_strava_prd.pdf
 
 # Gradle wrapper jar is committed on purpose (reproducible builds); local SDK path is not
 android/local.properties
+
+# The Android release signing identity. An APK signed with a different key will not install
+# over one signed with this one, so the keystore is kept out of the repository and backed up
+# by hand — losing it means every existing install has to be uninstalled before an update.
+.keys/
+*.jks
+*.keystore

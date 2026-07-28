@@ -10,6 +10,7 @@
 [![Security](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
 [![Duplication](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
 [![Lines of code](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Latest release](https://img.shields.io/github/v/release/andrewkomkov/healthhub?label=apk&sort=semver)](https://github.com/andrewkomkov/healthhub/releases/latest)
 [![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
 
 The quality gate is **red on purpose until coverage is reported**: every other condition passes,
@@ -76,6 +77,13 @@ queued behind that.
 
 What is *not* yet true is written down rather than glossed over — see the known open items at
 the end of [the roadmap](docs/ROADMAP.md).
+
+## Install the app
+
+The signed APK is on the [releases page](https://github.com/andrewkomkov/healthhub/releases/latest)
+— Android 9 or newer. It is built by CI from a tag, so what you install is what the tag says,
+and it talks to the deployment it was built against. Building your own is the point of the next
+section; point it at your own Worker with `HEALTHHUB_BASE_URL` in `local.properties`.
 
 ## Getting started
 
