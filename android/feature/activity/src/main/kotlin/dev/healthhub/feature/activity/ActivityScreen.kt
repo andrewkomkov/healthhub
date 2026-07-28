@@ -9,9 +9,21 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.rounded.Bolt
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material.icons.rounded.Route
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Terrain
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -20,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -33,9 +46,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.healthhub.core.designsystem.ExpressiveShapes
 import dev.healthhub.core.designsystem.HealthHubType
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.model.RoutePoint
@@ -172,15 +188,23 @@ private fun ActivityDetail(
 
         val lat = telemetry?.lat
         val lon = telemetry?.lon
-        // A track of nothing but dropouts is not a route. Checking here rather than inside the
-        // map keeps the explanatory state and the map as one either-or instead of a blank space.
-        val drawable = remember(lat, lon) {
-            lat != null && lon != null &&
-                (0 until minOf(lat.size, lon.size)).any { !lat[it].isNaN() && !lon[it].isNaN() }
+        // The one answer both branches are decided from. It used to be two — the screen asked
+        // "are there any positions" and the map asked "is there a line" — and a recording whose
+        // track is a single fix answered yes to the first and no to the second, so it rendered
+        // no map *and* no explanation, just a gap between two cards.
+        val geometry = remember(lat, lon, telemetry?.time) {
+            Route.geometry(lat, lon, telemetry?.time)
+        }
+        val fixes = remember(lat, lon) {
+            if (lat == null || lon == null) {
+                0
+            } else {
+                (0 until minOf(lat.size, lon.size)).count { !lat[it].isNaN() && !lon[it].isNaN() }
+            }
         }
 
-        if (drawable && lat != null && lon != null) {
-            RouteMap(lat = lat, lon = lon, time = telemetry?.time, cursor = cursor)
+        if (geometry.bounds != null) {
+            RouteMap(geometry = geometry, lat = lat, lon = lon, cursor = cursor)
             // The import's verdict outlives the card it was shown in. It is the moment the map
             // appears that the athlete needs to be told whether the distance above it changed,
             // and letting the map replace the explanation would drop that sentence on the floor.
@@ -188,7 +212,7 @@ private fun ActivityDetail(
                 RouteOutcome(message = route.message)
             }
         } else {
-            RouteCard(state = route, onImport = onImportRoute)
+            RouteCard(state = route, fixes = fixes, onImport = onImportRoute)
         }
 
         if (panels.isNotEmpty() && x != null) {
@@ -253,43 +277,111 @@ private fun ActivityDetail(
 @Composable
 private fun SummaryCard(activity: ActivityDetailDto, sport: String, units: UnitSystem) {
     val pacey = !Format.usesSpeed(sport)
-    SectionCard(title = null) {
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
-            verticalArrangement = Arrangement.spacedBy(Spacing.md),
-        ) {
-            Stat("Distance", Format.distance(activity.distanceM, units))
-            Stat("Moving", Format.duration(activity.movingSeconds ?: activity.elapsedSeconds))
-            Stat("Elapsed", Format.duration(activity.elapsedSeconds))
+    // Tiles rather than a card holding ten label-and-value pairs. Ten pairs inside one container
+    // is a table, and a table is read by scanning a column — but there is no column here, only a
+    // wrap, so the eye has to walk it item by item. Each figure in its own tonal container has
+    // an edge to stop at, which is what lets "Avg HR" be found without reading the nine beside it.
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+        maxItemsInEachRow = 2,
+    ) {
+        val tile = Modifier.weight(1f)
+        Stat(Icons.Rounded.Route, "Distance", Format.distance(activity.distanceM, units), tile)
+        Stat(
+            Icons.Rounded.Timer,
+            "Moving",
+            Format.duration(activity.movingSeconds ?: activity.elapsedSeconds),
+            tile,
+        )
+        Stat(Icons.Rounded.Schedule, "Elapsed", Format.duration(activity.elapsedSeconds), tile)
+        Stat(
+            Icons.Rounded.Speed,
+            if (pacey) "Avg pace" else "Avg speed",
+            Format.paceOrSpeed(activity.avgSpeedMps, sport, units),
+            tile,
+        )
+        activity.maxSpeedMps?.let {
             Stat(
-                if (pacey) "Avg pace" else "Avg speed",
-                Format.paceOrSpeed(activity.avgSpeedMps, sport, units),
+                Icons.Rounded.Bolt,
+                if (pacey) "Best pace" else "Max speed",
+                Format.paceOrSpeed(it, sport, units),
+                tile,
             )
-            activity.maxSpeedMps?.let {
-                Stat(
-                    if (pacey) "Best pace" else "Max speed",
-                    Format.paceOrSpeed(it, sport, units),
-                )
-            }
-            activity.elevationGainM?.let { Stat("Elev gain", Format.elevation(it, units)) }
-            activity.avgHrBpm?.let { Stat("Avg HR", "$it bpm") }
-            activity.maxHrBpm?.let { Stat("Max HR", "$it bpm") }
-            activity.avgPowerW?.let { Stat("Avg power", Format.power(it)) }
-            activity.caloriesKcal?.let { Stat("Calories", "${it.roundToInt()} kcal") }
+        }
+        activity.elevationGainM?.let {
+            Stat(Icons.Rounded.Terrain, "Elev gain", Format.elevation(it, units), tile)
+        }
+        activity.avgHrBpm?.let { Stat(Icons.Rounded.Favorite, "Avg HR", "$it bpm", tile) }
+        activity.maxHrBpm?.let { Stat(Icons.Rounded.MonitorHeart, "Max HR", "$it bpm", tile) }
+        activity.avgPowerW?.let { Stat(Icons.Rounded.Bolt, "Avg power", Format.power(it), tile) }
+        activity.caloriesKcal?.let {
+            Stat(
+                Icons.Rounded.LocalFireDepartment,
+                "Calories",
+                "${it.roundToInt()} kcal",
+                tile,
+            )
         }
     }
 }
 
 /**
- * One figure and its name.
+ * One figure, in its own container, under its icon and name.
  *
- * The value carries the Expressive *emphasised* weight and the label does not: on a card holding
- * ten of these, the thing that has to be readable at a glance is the number, and the Expressive
- * type scale exists precisely so that prominence is a role rather than a hand-picked size.
+ * The value carries the Expressive *emphasised* weight and the label does not: the thing that has
+ * to be readable at a glance is the number, and the Expressive type scale exists precisely so
+ * that prominence is a role rather than a hand-picked size. The icon is what makes the tile
+ * findable without reading it at all.
  */
 @Composable
-private fun Stat(label: String, value: String) {
+private fun Stat(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = ExpressiveShapes.largeIncreased,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md),
+            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(STAT_ICON_SIZE),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(Spacing.xs))
+                Text(
+                    label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            Text(value, style = HealthHubType.headlineLargeEmphasized, maxLines = 1)
+        }
+    }
+}
+
+/** Sized to the label beside it rather than to the touch grid: nothing here is tappable. */
+private val STAT_ICON_SIZE = 15.dp
+
+/**
+ * A figure and its name, with no container of its own.
+ *
+ * The selection panel is *inside* a card and is read as a block — it answers one question, "what
+ * happened in the stretch I marked" — so tiles there would be containers inside a container.
+ */
+@Composable
+private fun Figure(label: String, value: String) {
     Column {
         Text(
             label,
@@ -343,16 +435,16 @@ private fun SelectionPanel(
             horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
-            Stat("Distance", Format.distance(stats.distanceM, units))
-            Stat("Elapsed", Format.duration(stats.elapsedSeconds))
-            Stat("Moving", Format.duration(stats.movingSeconds))
-            Stat(
+            Figure("Distance", Format.distance(stats.distanceM, units))
+            Figure("Elapsed", Format.duration(stats.elapsedSeconds))
+            Figure("Moving", Format.duration(stats.movingSeconds))
+            Figure(
                 if (pacey) "Avg pace" else "Avg speed",
                 Format.paceOrSpeed(stats.avgSpeedMps, sport, units),
             )
-            Stat("Elev gain", Format.elevation(stats.elevationGainM, units))
-            Stat("Avg HR", Format.heartRate(stats.avgHrBpm))
-            stats.avgPowerW?.let { Stat("Avg power", Format.power(it)) }
+            Figure("Elev gain", Format.elevation(stats.elevationGainM, units))
+            Figure("Avg HR", Format.heartRate(stats.avgHrBpm))
+            stats.avgPowerW?.let { Figure("Avg power", Format.power(it)) }
         }
     }
 }
@@ -450,6 +542,13 @@ private fun panelsOf(
                 "hr" -> activity.avgHrBpm?.let { "$it bpm" }
                 "cadence" -> activity.avgCadenceRpm?.let { Format.cadence(it) }
                 else -> activity.avgPowerW?.let { Format.power(it) }
+            },
+            // Standing still is not a pace. Without this the axis of a ride with traffic lights
+            // in it runs down to two hours per kilometre and the ride itself is a sliver.
+            axisFloor = if (key == "speed") {
+                TelemetryAnalysis.MOVING_SPEED_THRESHOLD_MPS
+            } else {
+                Double.NEGATIVE_INFINITY
             },
         )
     }

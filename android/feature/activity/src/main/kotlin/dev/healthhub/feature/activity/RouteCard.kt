@@ -30,6 +30,12 @@ import dev.healthhub.core.model.RoutePoint
 @Composable
 internal fun RouteCard(
     state: RouteImportState,
+    /**
+     * How many positions the telemetry actually carries. Not the same question as whether a
+     * track can be *imported*: a recording can hold one fix and no more, which is a track by
+     * every check the platform makes and nothing a map can draw.
+     */
+    fixes: Int,
     onImport: (String, List<RoutePoint>?) -> Unit,
 ) {
     // The platform's per-activity consent screen. It names the workout, returns the track once,
@@ -39,6 +45,25 @@ internal fun RouteCard(
     val contract = remember { ExerciseRouteContract() }
     val launcher = rememberLauncherForActivityResult(contract = contract) { points ->
         pendingSession(state)?.let { onImport(it, points) }
+    }
+
+    // This composable is only reached when the geometry produced no segment worth drawing, so
+    // any position at all means the track is there and unusable — which is a different sentence
+    // from every state below. Saying one of those instead sends the athlete into Health Connect
+    // looking for a switch that would change nothing.
+    if (fixes > 0) {
+        Explain(
+            title = "Not enough of a track to draw",
+            body = if (fixes == 1) {
+                "This recording stored a single position and nothing after it, so there is no " +
+                    "line to put on a map. Another app's copy of the same workout may have the " +
+                    "whole track — the archive is where a copy that lost a duplicate goes."
+            } else {
+                "This recording's $fixes positions are too far apart to be one track — every " +
+                    "leg between them was rejected as an impossible jump."
+            },
+        )
+        return
     }
 
     when (state) {

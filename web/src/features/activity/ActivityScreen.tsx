@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react'
 import { type User } from '../../core/api/client'
 import { TelemetryCharts, type ChartPanel } from '../../core/charts/TelemetryCharts'
+import { Icon, type IconName } from '../../core/m3e/Icon'
 import { RouteMap } from '../../core/map/RouteMap'
+import { routeGeometry } from '../../core/map/route'
 import {
   distance,
   duration,
@@ -10,7 +12,11 @@ import {
   paceOrSpeed,
   sportLabel,
 } from '../../core/format'
-import { cumulativeDistance, rangeStats } from '../../core/telemetry/analysis'
+import {
+  cumulativeDistance,
+  rangeStats,
+  MOVING_SPEED_THRESHOLD_MPS,
+} from '../../core/telemetry/analysis'
 import { SplitsTable } from './SplitsTable'
 import { ZoneDistribution } from './ZoneDistribution'
 import { useActivityTelemetry } from './useTelemetry'
@@ -30,6 +36,26 @@ const PANEL_LABELS: Record<PanelKey, string> = {
 
 const SPEED_SPORTS = new Set(['cycling', 'ebiking', 'rowing', 'swimming', 'skiing', 'skating'])
 
+/**
+ * One figure, in its own container, under its icon and name.
+ *
+ * The value carries the Expressive emphasised weight and the label does not: the thing that has
+ * to be readable at a glance is the number. The icon is what makes the tile findable without
+ * reading it at all — the phone draws the identical tile with the identical mark.
+ */
+function Tile({ icon, label, value }: { icon: IconName; label: string; value: string }) {
+  return (
+    <div className="hh-tile">
+      <span className="t-label-medium hh-tile__label">
+        <Icon name={icon} />
+        {label}
+      </span>
+      <span className="t-headline-large-emphasized numeric">{value}</span>
+    </div>
+  )
+}
+
+/** A figure and its name, with no container: inside a card, tiles would be boxes in a box. */
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="hh-stat">
@@ -115,10 +141,30 @@ export function ActivityScreen({
           values,
           format: formatFor(key),
           summary: summaries[key],
+          // Standing still is not a pace. Without this the axis of a ride with traffic lights
+          // in it runs down to two hours per kilometre and the ride itself is a sliver.
+          ...(key === 'speed' ? { axisFloor: MOVING_SPEED_THRESHOLD_MPS } : {}),
         },
       ]
     })
   }, [channels, activity, sport, units, pacey, formatFor])
+
+  // Computed here rather than inside the map, because the choice between the map and the card
+  // that stands in for it is this screen's to make — and it has to be made from the same answer
+  // the map draws from. `fixCount` is what lets the card say which of the three cases it is.
+  const routeShape = useMemo(
+    () => routeGeometry(channels.lat, channels.lon, channels.time),
+    [channels.lat, channels.lon, channels.time],
+  )
+  const fixCount = useMemo(() => {
+    const { lat, lon } = channels
+    if (!lat || !lon) return 0
+    let seen = 0
+    for (let i = 0; i < Math.min(lat.length, lon.length); i++) {
+      if (!Number.isNaN(lat[i]!) && !Number.isNaN(lon[i]!)) seen++
+    }
+    return seen
+  }, [channels])
 
   const hasDistanceAxis = channels.distance !== null
   const activeAxis = hasDistanceAxis ? axis : 'time'
@@ -183,48 +229,72 @@ export function ActivityScreen({
         </header>
 
         <section className="m3-card hh-section" aria-label="Summary">
-          <div className="hh-stats-grid">
-            <Stat label="Distance" value={distance(activity.distanceM, units)} />
-            <Stat label="Moving" value={duration(activity.movingSeconds ?? activity.elapsedSeconds)} />
-            <Stat label="Elapsed" value={duration(activity.elapsedSeconds)} />
-            <Stat
+          <div className="hh-stats-tiles">
+            <Tile icon="route" label="Distance" value={distance(activity.distanceM, units)} />
+            <Tile
+              icon="timer"
+              label="Moving"
+              value={duration(activity.movingSeconds ?? activity.elapsedSeconds)}
+            />
+            <Tile icon="schedule" label="Elapsed" value={duration(activity.elapsedSeconds)} />
+            <Tile
+              icon="speed"
               label={pacey ? 'Avg pace' : 'Avg speed'}
               value={paceOrSpeed(activity.avgSpeedMps, sport, units)}
             />
             {activity.maxSpeedMps !== null && (
-              <Stat
+              <Tile
+                icon="bolt"
                 label={pacey ? 'Best pace' : 'Max speed'}
                 value={paceOrSpeed(activity.maxSpeedMps, sport, units)}
               />
             )}
             {activity.elevationGainM !== null && (
-              <Stat label="Elev gain" value={elevation(activity.elevationGainM, units)} />
+              <Tile
+                icon="terrain"
+                label="Elev gain"
+                value={elevation(activity.elevationGainM, units)}
+              />
             )}
-            {activity.avgHrBpm !== null && <Stat label="Avg HR" value={`${activity.avgHrBpm} bpm`} />}
-            {activity.maxHrBpm !== null && <Stat label="Max HR" value={`${activity.maxHrBpm} bpm`} />}
+            {activity.avgHrBpm !== null && (
+              <Tile icon="heart" label="Avg HR" value={`${activity.avgHrBpm} bpm`} />
+            )}
+            {activity.maxHrBpm !== null && (
+              <Tile icon="pulse" label="Max HR" value={`${activity.maxHrBpm} bpm`} />
+            )}
             {activity.avgPowerW !== null && (
-              <Stat label="Avg power" value={`${Math.round(activity.avgPowerW)} W`} />
+              <Tile icon="bolt" label="Avg power" value={`${Math.round(activity.avgPowerW)} W`} />
             )}
             {activity.caloriesKcal !== null && (
-              <Stat label="Calories" value={`${Math.round(activity.caloriesKcal)} kcal`} />
+              <Tile
+                icon="flame"
+                label="Calories"
+                value={`${Math.round(activity.caloriesKcal)} kcal`}
+              />
             )}
           </div>
         </section>
 
-        {channels.lat && channels.lon ? (
+        {routeShape.bounds !== null ? (
           <RouteMap
+            geometry={routeShape}
             lat={channels.lat}
             lon={channels.lon}
-            time={channels.time}
             cursorIndex={cursorIndex}
           />
         ) : (
           <section className="m3-empty" aria-label="Route">
-            <h2 className="t-title-medium">No route was recorded</h2>
+            <h2 className="t-title-medium">No route to draw</h2>
             <p className="t-body-medium">
-              {activity.hasGps
-                ? 'This workout has GPS, but the track itself has not been imported yet.'
-                : 'This was recorded indoors, or by an app that stored no positions. Everything the sensors did record is below.'}
+              {/* Three different situations, and telling them apart is the whole point of this
+                  card. A recording whose track is a single fix used to render nothing at all —
+                  no map, no sentence — because the screen asked "are there positions" and the
+                  map asked "is there a line", and the two disagreed. */}
+              {fixCount > 0
+                ? `This recording stored ${fixCount === 1 ? 'a single position' : `${fixCount} positions`}, which is not enough to draw a track. The app that wrote it recorded the start and nothing after it.`
+                : activity.hasGps
+                  ? 'This workout has GPS, but the track itself has not been imported yet.'
+                  : 'This was recorded indoors, or by an app that stored no positions. Everything the sensors did record is below.'}
             </p>
           </section>
         )}
