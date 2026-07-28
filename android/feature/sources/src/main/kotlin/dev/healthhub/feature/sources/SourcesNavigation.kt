@@ -8,7 +8,11 @@ import dagger.Module
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Inventory2
+import androidx.compose.material.icons.rounded.Layers
 import dev.healthhub.core.navigation.Destination
+import dev.healthhub.core.navigation.MenuEntry
 import dev.healthhub.core.navigation.NavContribution
 import dev.healthhub.core.navigation.Navigator
 import dev.healthhub.core.navigation.deepLinkFor
@@ -31,6 +35,13 @@ import javax.inject.Inject
 class SourcesNavContribution @Inject constructor() : NavContribution {
 
     override val destination: Destination = Destination.Sources
+
+    // Two, because this module serves two screens worth reaching and the archive is the one an
+    // athlete goes looking for after noticing a workout is missing from the feed.
+    override val menuEntries = listOf(
+        MenuEntry("Sources", Destination.Sources, Icons.Rounded.Layers, order = 20),
+        MenuEntry("Archive", Destination.Archive, Icons.Rounded.Inventory2, order = 30),
+    )
 
     override fun NavGraphBuilder.register(navigator: Navigator) {
         composable(

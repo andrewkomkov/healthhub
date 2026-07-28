@@ -1,6 +1,7 @@
 package dev.healthhub.core.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
@@ -27,6 +28,22 @@ interface NavContribution {
     /** Present when the feature belongs in the bottom navigation bar. */
     val bottomBarEntry: BottomBarEntry?
         get() = null
+
+    /**
+     * Where this feature appears in the app's menu, if it does.
+     *
+     * A list rather than one entry because a module can serve more than one screen worth
+     * reaching — `feature:sources` serves both the source order and the archive.
+     *
+     * This is the second registry the architecture wanted. Before it, the menu was a list of
+     * `Destination` values written out by hand in `feature:feed`, and it named a route no module
+     * serves: `Destination.Settings` exists in this file, `feature:settings` is an empty module,
+     * and tapping Settings threw `IllegalArgumentException: Navigation destination that matches
+     * route settings cannot be found`. A menu built from the contributions cannot say that,
+     * because only a module that registered a screen can offer a way into it.
+     */
+    val menuEntries: List<MenuEntry>
+        get() = emptyList()
 }
 
 data class BottomBarEntry(
@@ -35,6 +52,24 @@ data class BottomBarEntry(
     /** Lower sorts earlier. Explicit so bar order does not depend on injection order. */
     val order: Int,
 )
+
+data class MenuEntry(
+    val label: String,
+    /** Named separately from the contribution's own destination: one module can offer several. */
+    val destination: Destination,
+    val icon: ImageVector,
+    /** Lower sorts earlier. Explicit so menu order does not depend on injection order. */
+    val order: Int,
+)
+
+/**
+ * The menu, collected by `:app` from every contribution and read by whichever screen draws it.
+ *
+ * A composition local rather than a parameter threaded through the graph: the feed is built by
+ * its own module, and passing this down would mean every screen between here and there knowing
+ * about a menu it does not draw.
+ */
+val LocalNavMenu = staticCompositionLocalOf { emptyList<MenuEntry>() }
 
 /**
  * The app's routes.

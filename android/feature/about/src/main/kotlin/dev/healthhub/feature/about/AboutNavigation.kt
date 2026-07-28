@@ -18,7 +18,10 @@ import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import dev.healthhub.core.designsystem.Spacing
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Info
 import dev.healthhub.core.navigation.Destination
+import dev.healthhub.core.navigation.MenuEntry
 import dev.healthhub.core.navigation.NavContribution
 import dev.healthhub.core.navigation.Navigator
 import dev.healthhub.core.navigation.deepLinkFor
@@ -36,6 +39,10 @@ import javax.inject.Inject
 class AboutNavContribution @Inject constructor() : NavContribution {
 
     override val destination: Destination = Destination.About
+
+    override val menuEntries = listOf(
+        MenuEntry("About", Destination.About, Icons.Rounded.Info, order = 90),
+    )
 
     override fun NavGraphBuilder.register(navigator: Navigator) {
         composable(

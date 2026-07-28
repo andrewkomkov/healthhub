@@ -21,6 +21,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import dev.healthhub.core.designsystem.HealthHubTheme
 import dev.healthhub.core.navigation.Destination
 import dev.healthhub.core.navigation.NavContribution
+import androidx.compose.runtime.CompositionLocalProvider
+import dev.healthhub.core.navigation.LocalNavMenu
 import dev.healthhub.core.navigation.NavHostNavigator
 import dev.healthhub.core.network.TokenStore
 import javax.inject.Inject
@@ -119,19 +121,27 @@ private fun AppRoot(
         onDispose { (activity as? ComponentActivity)?.removeOnNewIntentListener(listener) }
     }
 
+    // Collected once from the same set the graph is built from, so the menu can only ever offer
+    // a screen some module actually registered.
+    val menu = remember(contributions) {
+        contributions.flatMap { it.menuEntries }.sortedBy { it.order }
+    }
+
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
         Box(modifier = Modifier.padding(padding)) {
-            NavHost(
-                navController = controller,
-                startDestination = startDestination.route,
-            ) {
-                // Sorted so the graph is built in a deterministic order regardless of how
-                // the injection set happens to be ordered.
-                contributions
-                    .sortedBy { it.destination.route }
-                    .forEach { contribution ->
-                        with(contribution) { register(navigator) }
-                    }
+            CompositionLocalProvider(LocalNavMenu provides menu) {
+                NavHost(
+                    navController = controller,
+                    startDestination = startDestination.route,
+                ) {
+                    // Sorted so the graph is built in a deterministic order regardless of how
+                    // the injection set happens to be ordered.
+                    contributions
+                        .sortedBy { it.destination.route }
+                        .forEach { contribution ->
+                            with(contribution) { register(navigator) }
+                        }
+                }
             }
         }
     }

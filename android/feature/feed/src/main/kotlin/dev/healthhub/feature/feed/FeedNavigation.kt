@@ -28,6 +28,10 @@ class FeedNavContribution @Inject constructor() : NavContribution {
                 // athlete to a screen that another module serves without depending on it.
                 onOpenActivity = { id -> navigator.navigate(Destination.ActivityDetail(id)) },
                 onOpenSync = { navigator.navigate(Destination.Sync) },
+                // Every screen below the feed used to be reachable only by deep link: the
+                // registry attaches whole screens and nothing had a menu to list them in, so
+                // the archive and the source order existed with no way in from the phone.
+                onOpen = { destination -> navigator.navigate(destination) },
             )
         }
     }
