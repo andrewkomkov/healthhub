@@ -38,15 +38,32 @@ class ChartSeriesTest {
     }
 
     @Test
-    fun `a spike survives the reduction`() {
+    fun `a spike lifts its bucket rather than being dropped`() {
         val x = DoubleArray(1000) { it.toDouble() }
         val values = DoubleArray(1000) { 120.0 }
         values[517] = 186.0
 
         val series = ChartSeries.build(x, values, columns = 100)
 
-        // Picking one sample per column would drop this; taking the column's extremes keeps it.
-        assertThat(series.max).isEqualTo(186.0)
+        // Ten samples to a bucket, so the spike is averaged with its neighbours rather than
+        // drawn at full height: (9 × 120 + 186) / 10. Picking one sample per bucket would drop
+        // it altogether. The unaveraged figure is what the summary card and the range statistics
+        // report — a chart is read for its shape, and those are read for their numbers.
+        assertThat(series.max).isWithin(1e-6).of(126.6)
+    }
+
+    @Test
+    fun `the reduction is a mean, not an envelope`() {
+        // A channel alternating between two values every sample — sensor noise, or a cadence
+        // sensor reading between two teeth. Drawn as an envelope this is a solid block of ink
+        // the height of the swing; drawn as a mean it is the line through the middle of it.
+        val x = DoubleArray(600) { it.toDouble() }
+        val values = DoubleArray(600) { if (it % 2 == 0) 80.0 else 100.0 }
+
+        val series = ChartSeries.build(x, values, columns = 60)
+
+        assertThat(series.min).isWithin(1e-6).of(90.0)
+        assertThat(series.max).isWithin(1e-6).of(90.0)
     }
 
     @Test
@@ -100,6 +117,34 @@ class ChartSeriesTest {
 
         assertThat(series.displayMin).isEqualTo(series.min)
         assertThat(series.displayMax).isEqualTo(series.max)
+    }
+
+    @Test
+    fun `the axis is floored at the moving threshold when much of the ride is stopped`() {
+        // A city commute: two fifths of it standing at lights. That is a whole quartile of
+        // stopped samples, so the lower fence sits underneath them and only the floor helps.
+        val x = DoubleArray(80) { it.toDouble() }
+        val values = DoubleArray(80) { if (it % 5 < 2) 0.01 else 4.0 + (it % 3) * 0.1 }
+
+        val series = ChartSeries.build(x, values, columns = 80, axisFloor = 0.5)
+
+        // 0.5 m/s is 33:20 /km. Unfloored this axis bottoms out around 122 minutes per kilometre.
+        assertThat(series.displayMin).isEqualTo(0.5)
+        assertThat(series.axisFloor).isEqualTo(0.5)
+        // Nothing is discarded — the stopped samples are still there, clamped to the edge.
+        assertThat(series.min).isEqualTo(0.01)
+    }
+
+    @Test
+    fun `a channel entirely below the floor keeps its own range`() {
+        // A trainer session with a dead wheel sensor: flooring here draws the lot on one edge.
+        val x = DoubleArray(40) { it.toDouble() }
+        val values = DoubleArray(40) { 0.02 + (it % 5) * 0.01 }
+
+        val series = ChartSeries.build(x, values, columns = 40, axisFloor = 0.5)
+
+        assertThat(series.displayMin).isLessThan(0.5)
+        assertThat(series.axisFloor).isEqualTo(Double.NEGATIVE_INFINITY)
     }
 
     @Test

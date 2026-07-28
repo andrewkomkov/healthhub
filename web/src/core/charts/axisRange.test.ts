@@ -52,6 +52,36 @@ describe('axisRange', () => {
     expect(hi).toBeGreaterThan(200)
   })
 
+  it('floors the axis at the moving threshold when much of the ride is stopped', () => {
+    // A city commute: two fifths of it standing at lights. That is a whole quartile of stopped
+    // samples, so the lower fence sits underneath them and only the floor helps.
+    const values = new Float64Array(80)
+    for (let i = 0; i < 80; i++) values[i] = i % 5 < 2 ? 0.01 : 4.0 + (i % 3) * 0.1
+
+    const [lo] = axisRange(values, 0.5)!
+
+    // 0.5 m/s is 33:20 /km. Unfloored this axis bottoms out around 122 minutes per kilometre.
+    expect(lo).toBe(0.5)
+  })
+
+  it('leaves the range alone when the whole channel is below the floor', () => {
+    // A trainer session with a dead wheel sensor: flooring here would draw the lot on one edge.
+    const values = new Float64Array(40)
+    for (let i = 0; i < 40; i++) values[i] = 0.02 + (i % 5) * 0.01
+
+    const [lo, hi] = axisRange(values, 0.5)!
+
+    expect(lo).toBeLessThan(0.5)
+    expect(hi).toBeLessThan(0.5)
+  })
+
+  it('does not move an axis that already sits above the floor', () => {
+    const values = new Float64Array(40)
+    for (let i = 0; i < 40; i++) values[i] = 3.0 + (i % 4) * 0.1
+
+    expect(axisRange(values, 0.5)).toEqual(axisRange(values))
+  })
+
   it('reports nothing for a channel that recorded nothing at all', () => {
     expect(axisRange(new Float64Array([Number.NaN, Number.NaN]))).toBeNull()
   })

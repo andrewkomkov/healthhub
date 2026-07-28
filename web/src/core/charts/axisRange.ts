@@ -36,10 +36,17 @@ function quantile(sorted: number[], fraction: number): number {
  * one. µPlot clamps drawn points to the scale, so a sample beyond a fence still reads as a line
  * running along the edge rather than vanishing.
  *
+ * `floor` is the second half of that story and the one the fences cannot do on their own. A ride
+ * that idles at traffic lights for a quarter of its samples has a *quartile* down there, not an
+ * outlier, so the fence sits below it and the bottom of a pace axis still reads 122:54 /km. The
+ * speed channel therefore passes the moving threshold: below it the athlete is stopped, "pace
+ * while stopped" is not a quantity, and an axis that reserves half its height for it is spending
+ * that height on nothing. Samples underneath are still drawn, clamped to the edge.
+ *
  * This is `ChartSeries.trimmedRange` on the Kotlin side, deliberately the same rule and the same
  * constants: the two clients must not disagree about the shape of the same ride.
  */
-export function axisRange(values: Float64Array): [number, number] | null {
+export function axisRange(values: Float64Array, floor?: number): [number, number] | null {
   const finite: number[] = []
   for (const value of values) if (!Number.isNaN(value)) finite.push(value)
   if (finite.length === 0) return null
@@ -68,8 +75,15 @@ export function axisRange(values: Float64Array): [number, number] | null {
     }
   }
 
+  // Only ever raises the bottom, and only while there is a workout left above it: a channel
+  // that never crossed the threshold at all — a trainer session with the wheel speed at zero —
+  // keeps its own range rather than being flattened onto a line.
+  const flooring = floor !== undefined && hi > floor
+  if (flooring && lo < floor) lo = floor
+
   // A flat channel — a turbo trainer holding 200 W — would otherwise be a zero-height scale
   // drawn on one edge; giving it a span puts the line through the middle instead.
   const span = hi - lo > 0 ? hi - lo : 1
-  return [lo - span * RANGE_PAD, hi + span * RANGE_PAD]
+  const bottom = lo - span * RANGE_PAD
+  return [flooring ? Math.max(bottom, floor) : bottom, hi + span * RANGE_PAD]
 }

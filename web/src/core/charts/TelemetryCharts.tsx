@@ -1,22 +1,28 @@
-import { useEffect, useId, useMemo, useRef } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import { axisRange } from './axisRange'
+import { bucketMean, bucketize, finiteOf } from './buckets'
 import { describePanel } from './describe'
 import { useChartTheme } from './theme'
 
 /**
- * The stacked, aligned, cursor-synced chart stack on the activity detail screen.
+ * The cursor-scrubbed chart on the activity detail screen.
  *
- * One µPlot instance per channel rather than one chart with several y-axes: channels have
- * incomparable ranges (150 bpm and 4 m/s share no axis worth drawing) and stacking them keeps
- * every series readable at full height while `uPlot.sync` makes the whole stack behave as one
- * chart under the cursor.
+ * **One channel at a time, chosen with a chip.** This used to stack every channel the recording
+ * had, one µPlot instance each, synced under a shared cursor. Five panels means each is a fifth
+ * of the height, which is not enough to read a shape out of, and it means scrolling past four
+ * charts to reach the fifth. One chart shown properly beats five shown badly; the chips are the
+ * switch, they carry each channel's own colour, and the value under the pointer is the headline
+ * above the plot rather than a number in a legend somewhere else.
  *
- * Two things it deliberately does not do. It does not use µPlot's legend — the readout lives
- * in the panel header as React, direct-labelled next to the series it describes. And it does
- * not let a drag change the scale: dragging selects a range for the statistics panel, which is
- * what an athlete comparing a climb to the rest of the ride actually wants.
+ * The series is the mean of each bucket — see `buckets.ts`, where the reversal from a min-max
+ * envelope is argued, and `ChartSeries.kt`, which does the identical reduction on the phone.
+ *
+ * Two things it deliberately does not do. It does not use µPlot's legend — the readout is React,
+ * directly above the series it describes. And it does not let a drag change the scale: dragging
+ * selects a range for the statistics panel, which is what an athlete comparing a climb to the
+ * rest of the ride actually wants.
  */
 
 export interface ChartPanel {
@@ -25,27 +31,35 @@ export interface ChartPanel {
   label: string
   values: Float64Array
   format: (value: number) => string
-  /** Shown in the header when the pointer is away — usually the activity average. */
+  /** Shown when the pointer is away — usually the activity average. */
   summary?: string
+  /**
+   * A value the y axis may not drop below, whatever the channel did. Speed passes the moving
+   * threshold: see `axisRange`, which is where the reasoning lives.
+   */
+  axisFloor?: number
 }
 
 export interface TelemetryChartsProps {
   x: Float64Array
   xFormat: (value: number) => string
   panels: ChartPanel[]
-  /** Sample index under the cursor, or null when the pointer leaves the stack. */
+  /** Sample index under the cursor, or null when the pointer leaves the chart. */
   onCursor?: (index: number | null) => void
   /** Inclusive sample range, or null when the selection is cleared. */
   onSelect?: (range: { from: number; to: number } | null) => void
-  /** Drives the header readout only; it never rebuilds a chart. */
+  /** Drives the header readout only; it never rebuilds the chart. */
   cursorIndex?: number | null
-  panelHeight?: number
+  plotHeight?: number
 }
 
 /** The Expressive line is heavier than the token's base weight; the token is still the source. */
 const STROKE_EMPHASIS = 1.5
 
 const FILL_TOP_ALPHA = 0.28
+
+/** Dashed rather than solid: the reading is the shape of the curve, not the grid behind it. */
+const GRID_DASH = [6, 10]
 
 /**
  * A token colour at a given alpha.
@@ -64,21 +78,6 @@ function withAlpha(colour: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
-/**
- * µPlot treats `null` as a gap and anything else as a value, so the sentinel-free `NaN`s the
- * codec produces have to be translated. Skipping this draws a straight line through every
- * tunnel and dropout in the ride — the canvas silently ignores a `NaN` coordinate and simply
- * continues the path from the last good point.
- */
-function toPlotData(values: Float64Array): (number | null)[] {
-  const out = new Array<number | null>(values.length)
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i]!
-    out[i] = Number.isNaN(value) ? null : value
-  }
-  return out
-}
-
 export function TelemetryCharts({
   x,
   xFormat,
@@ -86,204 +85,210 @@ export function TelemetryCharts({
   onCursor,
   onSelect,
   cursorIndex = null,
-  panelHeight = 132,
+  plotHeight = 220,
 }: TelemetryChartsProps) {
   const theme = useChartTheme()
   const syncKey = useId()
   const host = useRef<HTMLDivElement>(null)
-  const charts = useRef<uPlot[]>([])
 
-  // Callbacks live in refs so a parent re-rendering on every cursor move does not tear down
-  // and rebuild the charts underneath the athlete's pointer.
+  // Callbacks live in refs so a parent re-rendering on every cursor move does not tear down and
+  // rebuild the chart underneath the athlete's pointer.
   const cursorRef = useRef(onCursor)
   const selectRef = useRef(onSelect)
   cursorRef.current = onCursor
   selectRef.current = onSelect
 
-  const xs = useMemo(() => Array.from(x), [x])
-  const series = useMemo(() => panels.map((panel) => toPlotData(panel.values)), [panels])
-  const descriptions = useMemo(
-    () => Object.fromEntries(panels.map((panel) => [panel.key, describePanel(panel)])),
-    [panels],
-  )
+  const keys = panels.map((panel) => panel.key).join(',')
+  const [selectedKey, setSelectedKey] = useState(panels[0]?.key ?? '')
+  // A preview object and the full one can offer different channels; a key that survived the swap
+  // but no longer exists would leave the chart blank with a chip still lit next to it.
+  const panel = panels.find((entry) => entry.key === selectedKey) ?? panels[0]
+  useEffect(() => {
+    if (panels.length > 0 && !panels.some((entry) => entry.key === selectedKey)) {
+      setSelectedKey(panels[0]!.key)
+    }
+    // `keys` rather than `panels`, which is a new array on every render of the screen.
+  }, [keys, panels, selectedKey])
+
+  // The boundaries depend only on x, so every channel buckets identically — the chips must not
+  // swap between series that disagree about where the ride's halfway point is.
+  const buckets = useMemo(() => bucketize(x), [x])
+  const series = useMemo(() => (panel ? bucketMean(panel.values, buckets) : []), [panel, buckets])
+  const xs = useMemo(() => Array.from(buckets.x), [buckets])
+  const description = useMemo(() => (panel ? describePanel(panel) : ''), [panel])
 
   useEffect(() => {
     const container = host.current
-    if (!container || panels.length === 0) return
+    const target = container?.querySelector<HTMLDivElement>('[data-plot]')
+    if (!container || !target || !panel) return
 
-    const sync = uPlot.sync(syncKey)
-    const width = container.clientWidth || 720
-    const instances: uPlot[] = []
+    const colour = theme.channel(panel.key)
 
-    panels.forEach((panel, index) => {
-      const target = container.querySelector<HTMLDivElement>(`[data-panel="${panel.key}"]`)
-      if (!target) return
+    /**
+     * The vertical wash under the line, anchored to the top of the *series* rather than the top
+     * of the plot. A walk whose speed never leaves the bottom third of its own axis would
+     * otherwise get only the transparent tail of the gradient and show no fill at all.
+     *
+     * Returned as a function because µPlot calls it after layout, which is the only moment the
+     * plotting area's pixel bounds are known — and it re-calls it on resize, so the gradient
+     * follows the chart instead of being baked at the width it was born at.
+     */
+    const wash = (u: uPlot, seriesIndex: number) => {
+      const scale = u.series[seriesIndex]?.scale ?? 'y'
+      const max = u.scales[scale]?.max
+      const top = max === undefined ? u.bbox.top : u.valToPos(max, scale, true)
+      const gradient = u.ctx.createLinearGradient(0, top, 0, u.bbox.top + u.bbox.height)
+      gradient.addColorStop(0, withAlpha(colour, FILL_TOP_ALPHA))
+      gradient.addColorStop(1, withAlpha(colour, 0))
+      return gradient
+    }
 
-      const colour = theme.channel(panel.key)
-      const isLast = index === panels.length - 1
-
-      /**
-       * The vertical wash under the line, anchored to the top of the *series* rather than the top
-       * of the plot. A walk whose speed never leaves the bottom third of its own axis would
-       * otherwise get only the transparent tail of the gradient and show no fill at all.
-       *
-       * Returned as a function because µPlot calls it after layout, which is the only moment the
-       * plotting area's pixel bounds are known — and it re-calls it on resize, so the gradient
-       * follows the chart instead of being baked at the width it was born at.
-       */
-      const wash = (u: uPlot, seriesIndex: number) => {
-        const scale = u.series[seriesIndex]?.scale ?? 'y'
-        const max = u.scales[scale]?.max
-        const top = max === undefined ? u.bbox.top : u.valToPos(max, scale, true)
-        const gradient = u.ctx.createLinearGradient(0, top, 0, u.bbox.top + u.bbox.height)
-        gradient.addColorStop(0, withAlpha(colour, FILL_TOP_ALPHA))
-        gradient.addColorStop(1, withAlpha(colour, 0))
-        return gradient
-      }
-
-      const chart = new uPlot(
-        {
-          width,
-          height: panelHeight,
-          // Only the bottom chart carries the x labels; repeating them five times is noise.
-          padding: [8, 8, isLast ? 0 : 4, 0],
-          legend: { show: false },
-          cursor: {
-            sync: { key: sync.key, scales: ['x', null] },
-            drag: { x: true, y: false, setScale: false, dist: 4 },
-            // The ring is the bed, not the page: the dot sits on the tonal container the panel
-            // is drawn in, and a gap ring only reads as a gap if it is that colour.
-            points: { size: 9, width: 3, stroke: () => colour, fill: () => theme.bed },
-          },
-          scales: {
-            x: { time: false },
-            // Fixed to the trimmed range rather than left to µPlot's auto-fit, which scales to
-            // the extremes and is what let one stopped sample flatten an entire walk.
-            y: (() => {
-              const bounds = axisRange(panel.values)
-              return bounds ? { range: () => bounds } : {}
-            })(),
-          },
-          axes: [
-            {
-              show: isLast,
-              stroke: theme.inkMuted,
-              font: theme.axisFont,
-              grid: { stroke: theme.gridline, width: 1 },
-              ticks: { stroke: theme.axis, width: 1, size: 4 },
-              values: (_u, splits) => splits.map((value) => xFormat(value)),
-            },
-            {
-              stroke: theme.inkMuted,
-              font: theme.axisFont,
-              // The gutter is measured in pixels, so it has to follow the reader's font size:
-              // "1:23:45" at 200% text does not fit in a gutter cut for an 11px label.
-              size: Math.max(52, Math.round(theme.axisLabelPx * 5)),
-              grid: { stroke: theme.gridline, width: 1 },
-              ticks: { show: false },
-              values: (_u, splits) => splits.map((value) => panel.format(value)),
-            },
-          ],
-          series: [
-            {},
-            {
-              label: panel.label,
-              stroke: colour,
-              // Heavier than the token's base weight, round-capped, over a wash of the channel's
-              // own colour. The token is still the source; the Expressive treatment is the
-              // multiplier, and it is the same 1.5 the Kotlin side applies.
-              width: theme.lineWidth * STROKE_EMPHASIS,
-              // µPlot exposes the cap but not the join; it already joins round internally, so
-              // this is the whole of the round-stroke story on the web side.
-              cap: 'round',
-              fill: wash,
-              points: { show: false },
-              spanGaps: false,
-            },
-          ],
-          hooks: {
-            setCursor: [
-              (u) => {
-                if (index !== 0) return
-                cursorRef.current?.(u.cursor.idx ?? null)
-              },
-            ],
-            setSelect: [
-              (u) => {
-                if (index !== 0) return
-                if (u.select.width <= 0) {
-                  selectRef.current?.(null)
-                  return
-                }
-                const from = u.posToIdx(u.select.left)
-                const to = u.posToIdx(u.select.left + u.select.width)
-                selectRef.current?.({ from, to })
-              },
-            ],
-          },
+    const chart = new uPlot(
+      {
+        width: container.clientWidth || 720,
+        height: plotHeight,
+        padding: [8, 8, 0, 0],
+        legend: { show: false },
+        cursor: {
+          sync: { key: syncKey, scales: ['x', null] },
+          drag: { x: true, y: false, setScale: false, dist: 4 },
+          // The ring is the bed, not the page: the dot sits on the tonal container the plot is
+          // drawn in, and a gap ring only reads as a gap if it is that colour.
+          points: { size: 9, width: 3, stroke: () => colour, fill: () => theme.bed },
         },
-        [xs, series[index]!] as unknown as uPlot.AlignedData,
-        target,
-      )
-
-      instances.push(chart)
-    })
-
-    charts.current = instances
+        scales: {
+          x: { time: false },
+          // Fixed to the trimmed range rather than left to µPlot's auto-fit, which scales to the
+          // extremes and is what let one stopped sample flatten an entire walk.
+          y: (() => {
+            const bounds = axisRange(finiteOf(series), panel.axisFloor)
+            return bounds ? { range: () => bounds } : {}
+          })(),
+        },
+        axes: [
+          {
+            stroke: theme.inkMuted,
+            font: theme.axisFont,
+            grid: { stroke: theme.gridline, width: 1, dash: GRID_DASH },
+            ticks: { stroke: theme.axis, width: 1, size: 4 },
+            values: (_u, splits) => splits.map((value) => xFormat(value)),
+          },
+          {
+            stroke: theme.inkMuted,
+            font: theme.axisFont,
+            // The gutter is measured in pixels, so it has to follow the reader's font size:
+            // "1:23:45" at 200% text does not fit in a gutter cut for an 11px label.
+            size: Math.max(52, Math.round(theme.axisLabelPx * 5)),
+            grid: { stroke: theme.gridline, width: 1, dash: GRID_DASH },
+            ticks: { show: false },
+            values: (_u, splits) => splits.map((value) => panel.format(value)),
+          },
+        ],
+        series: [
+          {},
+          {
+            label: panel.label,
+            stroke: colour,
+            // Heavier than the token's base weight, round-capped, over a wash of the channel's
+            // own colour. The token is still the source; the Expressive treatment is the
+            // multiplier, and it is the same 1.5 the Kotlin side applies.
+            width: theme.lineWidth * STROKE_EMPHASIS,
+            // µPlot exposes the cap but not the join; it already joins round internally, so this
+            // is the whole of the round-stroke story on the web side.
+            cap: 'round',
+            fill: wash,
+            points: { show: false },
+            spanGaps: false,
+          },
+        ],
+        hooks: {
+          setCursor: [
+            (u) => {
+              const bucket = u.cursor.idx
+              // The cursor lands on a bucket; everything downstream — the readout, the marker on
+              // the map, the range statistics — counts in samples of the ride.
+              cursorRef.current?.(
+                bucket === null || bucket === undefined ? null : (buckets.sample[bucket] ?? null),
+              )
+            },
+          ],
+          setSelect: [
+            (u) => {
+              if (u.select.width <= 0) {
+                selectRef.current?.(null)
+                return
+              }
+              const from = buckets.from[u.posToIdx(u.select.left)] ?? 0
+              const to = buckets.to[u.posToIdx(u.select.left + u.select.width)] ?? 1
+              selectRef.current?.({ from, to: Math.max(from, to - 1) })
+            },
+          ],
+        },
+      },
+      [xs, series] as unknown as uPlot.AlignedData,
+      target,
+    )
 
     const observer = new ResizeObserver(() => {
       const next = container.clientWidth
-      if (next > 0) instances.forEach((chart) => chart.setSize({ width: next, height: panelHeight }))
+      if (next > 0) chart.setSize({ width: next, height: plotHeight })
     })
     observer.observe(container)
 
     return () => {
       observer.disconnect()
-      instances.forEach((chart) => chart.destroy())
-      charts.current = []
+      chart.destroy()
     }
-    // Rebuilt when the data, the panel set or the palette changes — the three things µPlot
+    // Rebuilt when the data, the chosen channel or the palette changes — the three things µPlot
     // cannot be told about after construction.
-  }, [xs, series, panels, panelHeight, syncKey, theme, xFormat])
+  }, [xs, series, buckets, panel, plotHeight, syncKey, theme, xFormat])
+
+  if (!panel) return null
+
+  const at = cursorIndex === null ? Number.NaN : (panel.values[cursorIndex] ?? Number.NaN)
+  const where =
+    cursorIndex === null
+      ? panel.summary
+        ? `${panel.label}, average`
+        : panel.label
+      : `${panel.label} at ${xFormat(x[Math.min(cursorIndex, x.length - 1)] ?? 0)}`
 
   return (
-    <div ref={host} className="hh-chart-stack">
-      {panels.map((panel) => {
-        const at = cursorIndex === null ? NaN : (panel.values[cursorIndex] ?? NaN)
-        return (
-          <figure key={panel.key} className="hh-chart">
-            <figcaption className="hh-chart__header">
-              <span className="t-label-medium hh-chart__label">
-                {/* The swatch is what makes this direct labelling rather than a legend:
-                    the colour is next to its own name, not in a key somewhere else. */}
-                <span
-                  className="hh-chart__swatch"
-                  style={{ background: `var(--chart-channel-${panel.key})` }}
-                  aria-hidden="true"
-                />
-                {panel.label}
-              </span>
-              {/* Tinted with the channel's own colour rather than a neutral: the pill is part
-                  of the direct labelling, so it carries the identity the swatch and the line
-                  already carry. */}
+    <div ref={host} className="hh-chart">
+      {panels.length > 1 && (
+        <div className="hh-chips hh-chips--wrap" role="group" aria-label="Chart channel">
+          {panels.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              className={`hh-chip${entry.key === panel.key ? ' hh-chip--selected' : ''}`}
+              aria-pressed={entry.key === panel.key}
+              onClick={() => setSelectedKey(entry.key)}
+            >
+              {/* The channel's own colour, not a generic icon: the swatch is the same identity
+                  the line and the readout carry, so the chip needs no other mark. */}
               <span
-                className="t-title-medium-emphasized numeric hh-chart__readout"
-                style={{
-                  background: `color-mix(in srgb, var(--chart-channel-${panel.key}) 16%, transparent)`,
-                }}
-              >
-                {Number.isNaN(at) ? (panel.summary ?? '—') : panel.format(at)}
-              </span>
-            </figcaption>
-            <div
-              data-panel={panel.key}
-              className="hh-chart__canvas"
-              role="img"
-              aria-label={descriptions[panel.key] ?? panel.label}
-            />
-          </figure>
-        )
-      })}
+                className="hh-chart__swatch"
+                style={{ background: `var(--chart-channel-${entry.key})` }}
+                aria-hidden="true"
+              />
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="hh-chart__value">
+        <span
+          className="t-headline-large-emphasized numeric"
+          style={{ color: `var(--chart-channel-${panel.key})` }}
+        >
+          {Number.isNaN(at) ? (panel.summary ?? '—') : panel.format(at)}
+        </span>
+        <span className="t-label-medium hh-chart__where">{where}</span>
+      </div>
+
+      <div data-plot className="hh-chart__canvas" role="img" aria-label={description} />
     </div>
   )
 }

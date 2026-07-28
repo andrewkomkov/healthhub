@@ -12,8 +12,13 @@
 
 const EARTH_RADIUS_M = 6_371_008.8
 
-/** Below this the athlete is stopped. Mirrors `Metrics.MOVING_SPEED_THRESHOLD_MPS`. */
-const MOVING_SPEED_THRESHOLD_MPS = 0.5
+/**
+ * Below this the athlete is stopped. Mirrors `Metrics.MOVING_SPEED_THRESHOLD_MPS`.
+ *
+ * Exported because the speed chart floors its axis here too: a pace axis is the reciprocal of
+ * speed, so everything below this threshold is a division by nearly nothing.
+ */
+export const MOVING_SPEED_THRESHOLD_MPS = 0.5
 
 /** Barometers jitter. Mirrors `Metrics.ELEVATION_NOISE_THRESHOLD_M`. */
 const ELEVATION_NOISE_THRESHOLD_M = 1.0

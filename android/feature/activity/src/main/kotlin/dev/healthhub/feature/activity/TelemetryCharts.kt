@@ -1,5 +1,7 @@
 package dev.healthhub.feature.activity
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -7,8 +9,9 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,12 +19,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.State
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +41,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -39,6 +50,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -60,12 +72,14 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The stacked, aligned, cursor-synced chart stack on the activity detail screen.
+ * The cursor-scrubbed chart on the activity detail screen.
  *
- * One panel per channel rather than one chart with several y axes: channels have incomparable
- * ranges — 150 bpm and 4 m/s share no axis worth drawing — and stacking them keeps every series
- * readable at full height while a single x axis and a single cursor make the stack behave as one
- * chart under the finger.
+ * **One channel at a time, chosen with a chip.** This used to stack every channel the recording
+ * had — five panels, one above the other, sharing a cursor. Each was then a sixth of the screen
+ * tall, which is not enough height to read a shape out of, and reaching the power chart meant
+ * scrolling past four others. A phone shows one chart properly or five badly. The chips are the
+ * switch, they carry the channel's own colour, and the channel under the finger is named in full
+ * above the plot rather than in a legend beside it.
  *
  * Everything is drawn on a Compose canvas from `core:designsystem` primitives. There is no
  * charting library and therefore no library default anywhere in it: ink, gridlines, stroke width
@@ -75,29 +89,27 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * ## What makes it Expressive rather than merely Material
  *
- * A line on a bare background is a chart a spreadsheet would draw. The Expressive treatment here
- * is four deliberate choices, each of which is a token rather than a taste:
+ * A line on a bare background is a chart a spreadsheet would draw. The treatment here is five
+ * deliberate choices, each of which is a token rather than a taste:
  *
- *  - **The plot has a container.** Every panel is drawn inside a shaped, tonal bed at the
- *    Expressive `largeIncreased` radius, so the series sits *in* something instead of floating on
- *    the card. This is also what lets the axis labels live inside the plot, which is what stopped
- *    them overhanging the card edge.
- *  - **The series has weight.** A round-capped stroke above a vertical gradient wash of the
- *    channel's own colour. The area is what gives a 36-sample walk a shape to read at a glance;
- *    the stroke on top is still the honest min-max envelope, so a one-second spike survives.
- *  - **The cursor is a component, not a hairline.** A full-height rounded scrubber in the primary
- *    colour with a ringed dot on the series, sized from `markerMinSize` so it stays a touch
- *    target rather than a pixel.
- *  - **The readout is direct-labelled and emphasised.** The value sits in a tonal pill tinted
- *    with its own channel colour, next to the name, in the Expressive emphasised type role —
- *    never in a legend somewhere else on the screen.
+ *  - **The value is the headline.** The number under the finger is set in the Expressive
+ *    emphasised display role, in the channel's own colour, above the plot — not floating on the
+ *    curve, where a tall series simply covers it. Under it, in one quiet line, *where* on the
+ *    ride that reading is; with no finger down, the activity average instead.
+ *  - **The plot has a container.** The canvas is a shaped tonal bed at the Expressive
+ *    `largeIncreased` radius, so the series sits *in* something rather than floating on the card.
+ *  - **The series has weight.** A round-capped stroke over a vertical gradient wash of the
+ *    channel's own colour, the mean of each bucket rather than its min-max envelope — see
+ *    [ChartSeries], where the reversal is argued.
+ *  - **The cursor is a component, not a hairline.** A full-height rounded scrubber with a ringed
+ *    dot on the series, sized from `markerMinSize` so it stays a touch target rather than a pixel.
+ *  - **Switching channels is animated.** The new curve grows from the baseline over one spatial
+ *    motion step; swapped instantly, the eye has nothing to follow and reads it as a glitch.
  *
- * Two gestures, because a phone has no hover. A drag scrubs the cursor, which is also what moves
- * the marker on the map. A press held still for the long-press timeout arms a range selection,
- * and dragging from there reports the statistics for that stretch.
- *
- * The cursor is deliberately **not** spring-animated. The Expressive motion scheme is for state
- * changes; a spring between the finger and the thing it is dragging reads as lag, not as polish.
+ * Two gestures, because a phone has no hover. A drag scrubs the cursor — which is also what moves
+ * the marker on the map — with a haptic tick every fortieth of the width, so the ride can be felt
+ * as well as seen. A press held still for the long-press timeout arms a range selection, and
+ * dragging from there reports the statistics for that stretch.
  */
 internal class ChartPanel(
     /** Channel name; also picks the colour, so a channel keeps its hue across both clients. */
@@ -105,11 +117,16 @@ internal class ChartPanel(
     val label: String,
     val values: DoubleArray,
     val format: (Double) -> String,
-    /** Shown in the header when the cursor is away — usually the activity average. */
+    /** Shown when the cursor is away — usually the activity average. */
     val summary: String?,
+    /**
+     * A value the axis may not drop below, whatever the channel did. Speed passes the moving
+     * threshold: see [ChartSeries.axisFloor], which is where the reasoning lives.
+     */
+    val axisFloor: Double = Double.NEGATIVE_INFINITY,
 )
 
-private val PANEL_HEIGHT = 132.dp
+private val PLOT_HEIGHT = 200.dp
 
 /**
  * Breathing room inside the tonal bed.
@@ -119,6 +136,7 @@ private val PANEL_HEIGHT = 132.dp
  */
 private val PLOT_INSET = Spacing.md
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TelemetryCharts(
     x: DoubleArray,
@@ -136,151 +154,163 @@ internal fun TelemetryCharts(
     val labelStyle = MaterialTheme.typography.labelSmall.copy(color = chrome.inkMuted)
     val density = LocalDensity.current
 
-    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
-        val widthPx = with(density) { maxWidth.toPx() }
-        val insetPx = with(density) { PLOT_INSET.toPx() }
-        val plotWidthPx = (widthPx - insetPx * 2).coerceAtLeast(1f)
-        val columns = (plotWidthPx / 2f).roundToInt().coerceIn(2, ChartSeries.MAX_COLUMNS)
+    // Saved as a key rather than an index: a preview object and the full one can offer different
+    // channels, and an index would silently point at a different chart when the swap lands.
+    var selectedKey by rememberSaveable(panels.map { it.key }) { mutableStateOf(panels[0].key) }
+    val panel = panels.firstOrNull { it.key == selectedKey } ?: panels[0]
 
-        // The sample under a horizontal position, shared by every panel so the stack reads as
-        // one chart. `x` is monotonic in both axis modes, which is what makes this exact. It has
-        // to agree with `xOf` in the draw pass constant for constant — the cursor line and the
-        // sample it reports are the same thing seen twice.
-        val indexAt: (Float) -> Int = remember(x, insetPx, plotWidthPx) {
-            { position ->
-                val fraction = ((position - insetPx) / plotWidthPx).coerceIn(0f, 1f)
-                TelemetryAnalysis.nearestIndex(x, x[0] + (x[x.size - 1] - x[0]) * fraction)
+    Column(modifier = modifier.fillMaxWidth()) {
+        if (panels.size > 1) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
+                verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+            ) {
+                panels.forEach { entry ->
+                    ChannelChip(
+                        panel = entry,
+                        selected = entry.key == panel.key,
+                        onClick = {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            selectedKey = entry.key
+                        },
+                    )
+                }
             }
+            Spacer(Modifier.height(Spacing.md))
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .scrubbable(x.size, indexAt, cursor, selection, haptics),
-            verticalArrangement = Arrangement.spacedBy(Spacing.lg),
-        ) {
-            panels.forEach { panel ->
-                ChartPanelView(
-                    panel = panel,
-                    x = x,
-                    columns = columns,
-                    insetPx = insetPx,
-                    plotWidthPx = plotWidthPx,
-                    cursor = cursor,
-                    selection = selection,
-                    measurer = measurer,
-                    labelStyle = labelStyle,
-                )
-            }
-
-            XAxisLabels(x = x, xFormat = xFormat, inset = PLOT_INSET)
-        }
+        ChartPlot(
+            panel = panel,
+            x = x,
+            xFormat = xFormat,
+            cursor = cursor,
+            selection = selection,
+            measurer = measurer,
+            labelStyle = labelStyle,
+            density = density,
+            haptics = haptics,
+        )
     }
 }
 
+@Composable
+private fun ChannelChip(panel: ChartPanel, selected: Boolean, onClick: () -> Unit) {
+    val colour = channelColor(panel.key)
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(panel.label, maxLines = 1) },
+        // The channel's own colour, not a generic icon: the swatch is the same identity the line,
+        // the readout and the web client's legend all carry, so the chip needs no other mark.
+        leadingIcon = {
+            Box(
+                modifier = Modifier
+                    .size(GeneratedTokens.markerMinSize)
+                    .clip(CircleShape)
+                    .background(colour),
+            )
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = colour.copy(alpha = SELECTED_CHIP_ALPHA),
+        ),
+    )
+}
+
 /**
- * One panel: a direct-labelled header and the plot in its own tonal container.
+ * The readout, the plot and the x axis: everything that changes when the chip changes.
  *
- * The readout lives in the header beside its own colour swatch rather than in a legend, so the
- * colour sits next to the thing it describes instead of in a key elsewhere on the screen.
+ * Split out so that switching channels rebuilds this and not the chip row, and so that the
+ * reduction is remembered per channel rather than recomputed on every recomposition of the screen.
  */
 @Composable
-private fun ChartPanelView(
+private fun ChartPlot(
     panel: ChartPanel,
     x: DoubleArray,
-    columns: Int,
-    insetPx: Float,
-    plotWidthPx: Float,
-    cursor: State<Int?>,
-    selection: State<IntRange?>,
+    xFormat: (Double) -> String,
+    cursor: MutableState<Int?>,
+    selection: MutableState<IntRange?>,
     measurer: TextMeasurer,
     labelStyle: TextStyle,
+    density: Density,
+    haptics: HapticFeedback,
 ) {
     val chrome = LocalChartChrome.current
     val colour = channelColor(panel.key)
     val selectionColour = MaterialTheme.colorScheme.primary
-    val series = remember(panel.values, x, columns) { ChartSeries.build(x, panel.values, columns) }
-    val density = LocalDensity.current
+    val series = remember(panel.values, x) {
+        ChartSeries.build(x, panel.values, ChartSeries.BUCKETS, panel.axisFloor)
+    }
     val lineWidthPx = with(density) { GeneratedTokens.lineWidth.toPx() } * STROKE_EMPHASIS
     val dotRadiusPx = with(density) { GeneratedTokens.dataEndRadius.toPx() }
     val cursorWidthPx = with(density) { CURSOR_WIDTH.toPx() }
     val labelPadPx = with(density) { Spacing.sm.toPx() }
+    val insetPx = with(density) { PLOT_INSET.toPx() }
 
     // The bed the series is drawn on. Two tonal steps above the card, not one: `SectionCard` is
     // itself `surfaceContainerLow`, so a bed at the same role is a container nobody can see.
     val bed = MaterialTheme.colorScheme.surfaceContainerHighest
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = Spacing.sm),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(GeneratedTokens.markerMinSize)
-                        .clip(CircleShape)
-                        .background(colour),
-                )
-                Spacer(Modifier.size(Spacing.sm))
-                Text(panel.label, style = MaterialTheme.typography.labelLarge)
-            }
-            PanelReadout(panel = panel, cursor = cursor, colour = colour)
-        }
-
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(PANEL_HEIGHT)
-                .clip(ExpressiveShapes.largeIncreased)
-                .background(bed)
-                .semantics { contentDescription = "${panel.label} chart" },
-        ) {
-            drawPanel(
-                series = series,
-                x = x,
-                colour = colour,
-                chromeGridline = chrome.gridline,
-                chromeInkMuted = chrome.inkMuted,
-                bed = bed,
-                selectionColour = selectionColour,
-                insetPx = insetPx,
-                plotWidthPx = plotWidthPx,
-                cursorIndex = cursor.value,
-                selectionRange = selection.value,
-                format = panel.format,
-                measurer = measurer,
-                labelStyle = labelStyle,
-                lineWidthPx = lineWidthPx,
-                dotRadiusPx = dotRadiusPx,
-                cursorWidthPx = cursorWidthPx,
-                labelPadPx = labelPadPx,
-            )
-        }
+    // Grown from the baseline on every change of channel. Snapped to zero first, so the switch
+    // is a movement the eye can follow rather than a substitution it can only notice afterwards.
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(panel.key, series) {
+        reveal.snapTo(0f)
+        reveal.animateTo(1f, tween(REVEAL_MS))
     }
-}
 
-/**
- * Isolated so that moving the cursor recomposes one line of text per panel rather than the whole
- * screen. Everything else the cursor touches is read in the draw phase and only repaints.
- */
-@Composable
-private fun PanelReadout(panel: ChartPanel, cursor: State<Int?>, colour: Color) {
     val index = cursor.value
-    val value = if (index == null) Double.NaN else panel.values.getOrElse(index) { Double.NaN }
+    val at = if (index == null) Double.NaN else panel.values.getOrElse(index) { Double.NaN }
     Text(
-        text = if (value.isNaN()) panel.summary ?: Format.EM_DASH else panel.format(value),
-        style = HealthHubType.titleMediumEmphasized,
-        modifier = Modifier
-            .clip(CircleShape)
-            // Tinted with the channel's own colour rather than a neutral: the pill is part of
-            // the direct labelling, so it carries the same identity the swatch and the line do.
-            .background(colour.copy(alpha = READOUT_TINT_ALPHA))
-            .padding(horizontal = Spacing.md, vertical = Spacing.xs),
+        text = if (at.isNaN()) panel.summary ?: Format.EM_DASH else panel.format(at),
+        style = HealthHubType.headlineLargeEmphasized,
+        color = colour,
     )
+    Text(
+        text = when {
+            index == null -> if (panel.summary == null) panel.label else "${panel.label}, average"
+            else -> "${panel.label} at ${xFormat(x[index.coerceIn(x.indices)])}"
+        },
+        style = MaterialTheme.typography.labelMedium,
+        color = chrome.inkMuted,
+    )
+
+    Spacer(Modifier.height(Spacing.sm))
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(PLOT_HEIGHT)
+            .clip(ExpressiveShapes.largeIncreased)
+            .background(bed)
+            .scrubbable(x, insetPx, cursor, selection, haptics)
+            .semantics { contentDescription = "${panel.label} chart" },
+    ) {
+        drawPanel(
+            series = series,
+            x = x,
+            colour = colour,
+            chromeGridline = chrome.gridline,
+            chromeInkMuted = chrome.inkMuted,
+            bed = bed,
+            selectionColour = selectionColour,
+            insetPx = insetPx,
+            plotWidthPx = (size.width - insetPx * 2).coerceAtLeast(1f),
+            cursorIndex = cursor.value,
+            selectionRange = selection.value,
+            format = panel.format,
+            measurer = measurer,
+            labelStyle = labelStyle,
+            lineWidthPx = lineWidthPx,
+            dotRadiusPx = dotRadiusPx,
+            cursorWidthPx = cursorWidthPx,
+            labelPadPx = labelPadPx,
+            reveal = reveal.value,
+        )
+    }
+
+    Spacer(Modifier.height(Spacing.sm))
+    XAxisLabels(x = x, xFormat = xFormat, inset = PLOT_INSET)
 }
 
 @Composable
@@ -334,6 +364,7 @@ private fun DrawScope.drawPanel(
     dotRadiusPx: Float,
     cursorWidthPx: Float,
     labelPadPx: Float,
+    reveal: Float,
 ) {
     if (!series.hasData) return
 
@@ -347,17 +378,24 @@ private fun DrawScope.drawPanel(
     // A flat channel — a turbo trainer holding 200 W — would otherwise divide by zero and be
     // drawn on the top edge; giving it a span puts the line through the middle instead.
     val rawSpan = (series.displayMax - series.displayMin).takeIf { it > 0 } ?: 1.0
-    val low = series.displayMin - rawSpan * RANGE_PAD
+    // The headroom is not allowed to reopen what the floor closed: padding under a pace axis
+    // floored at walking speed puts the bottom of the panel back at half an hour per kilometre.
+    val low = (series.displayMin - rawSpan * RANGE_PAD).coerceAtLeast(series.axisFloor)
     val high = series.displayMax + rawSpan * RANGE_PAD
     val range = high - low
 
-    // Clamped, not dropped. A sample outside the trimmed range is drawn on the edge, so it still
+    // Clamped, not dropped. A point outside the trimmed range is drawn on the edge, so it still
     // reads as "off the top of this axis" rather than disappearing.
-    fun yOf(value: Float): Float =
-        (bottom - ((value - low) / range) * plotHeight).toFloat().coerceIn(top, bottom)
+    fun yOf(value: Float): Float {
+        val full = (bottom - ((value - low) / range) * plotHeight).toFloat().coerceIn(top, bottom)
+        return bottom - (bottom - full) * reveal
+    }
 
     fun xOf(fraction: Float): Float = insetPx + fraction * plotWidthPx
 
+    // Dashed rather than solid, and three rather than the full grid: the reading is the shape of
+    // the curve, and a solid grid competes with it for the same ink.
+    val dash = PathEffect.dashPathEffect(floatArrayOf(GRID_DASH_ON, GRID_DASH_OFF))
     for (step in listOf(0f, 0.5f, 1f)) {
         val y = top + plotHeight * step
         drawLine(
@@ -366,6 +404,7 @@ private fun DrawScope.drawPanel(
             Offset(insetPx + plotWidthPx, y),
             strokeWidth = 1f,
             cap = StrokeCap.Round,
+            pathEffect = if (step == 1f) null else dash,
         )
     }
 
@@ -380,8 +419,8 @@ private fun DrawScope.drawPanel(
         )
     }
 
-    // The area first, then the envelope on top of it. Both break at a gap: a NaN sample is a
-    // gap, never a zero, and a fill carried straight across a tunnel would invent terrain.
+    // The area first, then the line on top of it. Both break at a gap: a bucket with no sample is
+    // a gap, never a zero, and a fill carried straight across a tunnel would invent terrain.
     var runStart = -1
     for (column in 0..series.columns) {
         val present = column < series.columns && series.present[column]
@@ -389,9 +428,8 @@ private fun DrawScope.drawPanel(
         if (present || runStart < 0) continue
 
         val fill = Path()
-        val firstX = xOf(series.at[runStart])
-        fill.moveTo(firstX, bottom)
-        for (i in runStart until column) fill.lineTo(xOf(series.at[i]), yOf(series.high[i]))
+        fill.moveTo(xOf(series.at[runStart]), bottom)
+        for (i in runStart until column) fill.lineTo(xOf(series.at[i]), yOf(series.value[i]))
         fill.lineTo(xOf(series.at[column - 1]), bottom)
         fill.close()
         drawPath(
@@ -416,11 +454,9 @@ private fun DrawScope.drawPanel(
             continue
         }
         val px = xOf(series.at[column])
-        val highY = yOf(series.high[column])
-        val lowY = yOf(series.low[column])
-        if (open) path.lineTo(px, highY) else path.moveTo(px, highY)
+        val py = yOf(series.value[column])
+        if (open) path.lineTo(px, py) else path.moveTo(px, py)
         open = true
-        path.lineTo(px, lowY)
     }
     drawPath(
         path,
@@ -429,23 +465,20 @@ private fun DrawScope.drawPanel(
     )
 
     /*
-     * A sample with no neighbour gets a marker of its own.
+     * A bucket with no neighbour gets a mark of its own.
      *
      * Left to the stroke it becomes a round cap the width of the line — three pixels — and a
      * channel that is mostly gaps, which is what an imported GPS track's altitude looks like
-     * beside a denser speed channel, renders as scattered specks that read as dirt on the
-     * screen rather than as measurements. Drawn at the mark token instead, the same data reads
-     * as what it is: points, because points are all the source recorded.
+     * beside a denser speed channel, renders as scattered specks that read as dirt on the screen
+     * rather than as measurements. Drawn at the mark token instead, the same data reads as what
+     * it is: points, because points are all the source recorded.
      */
     for (column in 0 until series.columns) {
         if (!series.present[column]) continue
         val before = column > 0 && series.present[column - 1]
         val after = column < series.columns - 1 && series.present[column + 1]
         if (before || after) continue
-        val centre = Offset(
-            xOf(series.at[column]),
-            yOf((series.high[column] + series.low[column]) / 2f),
-        )
+        val centre = Offset(xOf(series.at[column]), yOf(series.value[column]))
         drawCircle(colour, radius = dotRadiusPx * ISOLATED_DOT_SCALE, center = centre)
     }
 
@@ -453,10 +486,7 @@ private fun DrawScope.drawPanel(
     // scratch in the middle of an otherwise empty bed.
     val lastPresent = (series.columns - 1 downTo 0).firstOrNull { series.present[it] }
     if (lastPresent != null) {
-        val centre = Offset(
-            xOf(series.at[lastPresent]),
-            yOf((series.high[lastPresent] + series.low[lastPresent]) / 2f),
-        )
+        val centre = Offset(xOf(series.at[lastPresent]), yOf(series.value[lastPresent]))
         drawCircle(bed, radius = dotRadiusPx + lineWidthPx, center = centre)
         drawCircle(colour, radius = dotRadiusPx * END_DOT_SCALE, center = centre)
     }
@@ -475,7 +505,7 @@ private fun DrawScope.drawPanel(
 
         val column = (fraction * series.columns).toInt().coerceIn(0, series.columns - 1)
         if (series.present[column]) {
-            val centre = Offset(px, yOf((series.high[column] + series.low[column]) / 2f))
+            val centre = Offset(px, yOf(series.value[column]))
             drawCircle(bed, radius = dotRadiusPx + lineWidthPx, center = centre)
             drawCircle(colour, radius = dotRadiusPx, center = centre)
         }
@@ -517,12 +547,24 @@ private const val STROKE_EMPHASIS = 1.5f
 private const val SELECTION_ALPHA = 0.16f
 private const val CURSOR_ALPHA = 0.28f
 private const val FILL_TOP_ALPHA = 0.28f
-private const val READOUT_TINT_ALPHA = 0.16f
+private const val SELECTED_CHIP_ALPHA = 0.22f
 private const val END_DOT_SCALE = 0.7f
+private const val GRID_DASH_ON = 6f
+private const val GRID_DASH_OFF = 10f
+private const val REVEAL_MS = 320
 
-/** A lone sample is drawn as a mark, not as the round cap of a line that goes nowhere. */
+/** A lone bucket is drawn as a mark, not as the round cap of a line that goes nowhere. */
 private const val ISOLATED_DOT_SCALE = 0.8f
 private val CURSOR_WIDTH = 4.dp
+
+/**
+ * Haptic ticks across the whole width of the chart.
+ *
+ * A finger crossing the plot produces hundreds of pointer events, and one tick per event is a
+ * continuous buzz rather than a texture. Forty is about a finger's width per tick, which is what
+ * makes the curve feel like a scale under the fingertip.
+ */
+private const val SCRUB_TICKS = 40
 
 /* -------------------------------------------------------------------------- gestures */
 
@@ -536,17 +578,37 @@ private enum class Gesture { TAP, SCRUB, SCROLL }
  * leaving the chart, hold to mark where the climb started.
  *
  * A drag that is mostly vertical is the page being scrolled, and it is deliberately left
- * unconsumed: a chart stack that swallows vertical drags traps the athlete on it.
+ * unconsumed: a chart that swallows vertical drags traps the athlete on it.
  */
 private fun Modifier.scrubbable(
-    sampleCount: Int,
-    indexAt: (Float) -> Int,
+    x: DoubleArray,
+    insetPx: Float,
     cursor: MutableState<Int?>,
     selection: MutableState<IntRange?>,
     haptics: HapticFeedback,
-): Modifier = pointerInput(sampleCount, indexAt) {
+): Modifier = pointerInput(x, insetPx) {
+    val plotWidthPx = (size.width - insetPx * 2).coerceAtLeast(1f)
+    // The sample under a horizontal position. `x` is monotonic in both axis modes, which is what
+    // makes this exact; it has to agree with `xOf` in the draw pass constant for constant — the
+    // cursor line and the sample it reports are the same thing seen twice.
+    val indexAt: (Float) -> Int = { position ->
+        val fraction = ((position - insetPx) / plotWidthPx).coerceIn(0f, 1f)
+        TelemetryAnalysis.nearestIndex(x, x[0] + (x[x.size - 1] - x[0]) * fraction)
+    }
+    val tickStep = (x.size / SCRUB_TICKS).coerceAtLeast(1)
+    var lastTick = -1
+
+    fun scrub(index: Int) {
+        if (index / tickStep != lastTick) {
+            lastTick = index / tickStep
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+        cursor.value = index
+    }
+
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
+        lastTick = -1
 
         val outcome = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
             var result = Gesture.TAP
@@ -587,7 +649,7 @@ private fun Modifier.scrubbable(
             }
 
             Gesture.SCRUB -> drag(down.id) { change ->
-                cursor.value = indexAt(change.position.x)
+                scrub(indexAt(change.position.x))
                 change.consume()
             }
 
