@@ -1,5 +1,23 @@
 # HealthHub
 
+[![Build](https://github.com/andrewkomkov/healthhub/actions/workflows/build.yml/badge.svg)](https://github.com/andrewkomkov/healthhub/actions/workflows/build.yml)
+[![Android](https://github.com/andrewkomkov/healthhub/actions/workflows/android.yml/badge.svg)](https://github.com/andrewkomkov/healthhub/actions/workflows/android.yml)
+[![Web](https://github.com/andrewkomkov/healthhub/actions/workflows/web.yml/badge.svg)](https://github.com/andrewkomkov/healthhub/actions/workflows/web.yml)
+
+[![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Reliability](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Security](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Duplication](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Lines of code](https://sonarcloud.io/api/project_badges/measure?project=andrewkomkov_healthhub&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=andrewkomkov_healthhub)
+[![Licence](https://img.shields.io/badge/licence-Apache--2.0-blue)](LICENSE)
+
+The quality gate is **red on purpose until coverage is reported**: every other condition passes,
+and the one that fails is "80% coverage on new code" against a project that uploads no coverage
+report at all, so it reads 0%. The tests exist — 420 across the Worker, the browser and the
+phone's pure logic — and nothing tells Sonar about them yet. A badge that said otherwise would
+be decoration rather than a measurement.
+
 A Strava-class analytics platform for the workout, biometric and sleep data that Google
 Health Connect keeps locked on your Android phone — with no backend to run.
 

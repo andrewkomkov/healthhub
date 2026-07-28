@@ -1,6 +1,7 @@
 package dev.healthhub.core.sync
 
 import android.content.Context
+import android.util.Log
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.healthhub.core.database.PendingActivity
@@ -532,8 +533,8 @@ class SyncEngine @Inject constructor(
         api.uploadTelemetry(uploaded.id, fullFile, "full", gzipped = true)
 
         staging.clearPending(request.sourceUid)
-        fullFile.delete()
-        previewFile?.delete()
+        discardTelemetry(fullFile)
+        discardTelemetry(previewFile)
 
         return Ingested(
             activityId = uploaded.id,
@@ -786,6 +787,20 @@ class SyncEngine @Inject constructor(
     private fun telemetryDir(): File =
         File(context.cacheDir, "telemetry").apply { mkdirs() }
 
+    /**
+     * Drops a `.hht` that has been uploaded, and says so when it cannot.
+     *
+     * Best effort by design — these live in `cacheDir`, so one the platform is still holding is
+     * reclaimed with the cache rather than leaked — but the result is read rather than dropped.
+     * A five-hour ride is tens of megabytes, a year of them is not, and a cache that quietly
+     * never empties presents to the athlete as "storage full" rather than as a sync problem.
+     */
+    private fun discardTelemetry(file: File?) {
+        if (file != null && file.exists() && !file.delete()) {
+            Log.w(TAG, "Could not delete ${'$'}{file.name}; the cache will hold it until Android clears it")
+        }
+    }
+
     private suspend fun lastSyncedUntil(): Instant? =
         staging.state(CURSOR_KEY)?.syncedUntil?.let(Instant::ofEpochMilli)
 
@@ -839,6 +854,8 @@ class SyncEngine @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "SyncEngine"
+
         /**
          * Imports per backfill pass.
          *
