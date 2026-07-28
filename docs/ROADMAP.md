@@ -228,8 +228,10 @@ cost. DuckDB does **not** go in the Worker — see R-014.
   compile, but none has been drawn on a screen, let alone at a large font size or under
   TalkBack), the feature screens on the web (`article role="button"` on the feed card
   is the known one), and any of it in front of a real screen reader.
-- `CLOUDFLARE_API_TOKEN` in GitHub secrets so `deploy` goes green — it is the one red
-  workflow, and it is red only for that.
+- ~~`CLOUDFLARE_API_TOKEN` in GitHub secrets so `deploy` goes green~~ — **done on 2026-07-28**.
+  The workflow now deploys the Worker and applies remote D1 migrations on every push to `main`,
+  and it is the only path that does: the documented local command is `wrangler deploy
+  --dry-run`, and the quickstart, the README and the `healthhub-edge` agent all say so.
 - Run the quickstart from a clean clone and fix whatever does not work.
 
 ---
@@ -244,7 +246,7 @@ missing, not merely undocumented.
 | Item | Where |
 |---|---|
 | ~~`deploy` workflow red — missing `CLOUDFLARE_API_TOKEN`~~ — **green on 2026-07-28**: the token is in place, and the job now deploys and applies migrations on every push to main | — |
-| No in-app update check: the release APK is installed by hand and nothing tells an athlete a newer one exists. The version is in `BuildConfig` and the releases API is public, so this is a small feature rather than a design question | Session 6 |
+| ~~No in-app update check~~ — **done and driven on a Pixel 8 on 2026-07-28**: `feature:updates` asks GitHub for the latest release twice a day, shows a bar over the graph, and installs the APK after the athlete confirms — download, sha256 against the file `release.yml` now publishes beside it, then the system's own "update this app?" dialog. Proven end to end by installing a signed build named `0.0.9`, which found the published `0.1.0`, downloaded 51.5 MB and replaced itself. Two things are **not** covered: the checksum comparison never runs against a real published file until the first release built after today, and nothing has been drawn on the SM-G780F | — |
 | ~~**The deploy workflow is the thing that applies migrations, and it has never run.**~~ — settled the same day. `deploy.yml` deploys the Worker and then runs `d1 migrations apply --remote` — but without `CLOUDFLARE_API_TOKEN` the job fails, so every deployment so far has been a local `wrangler deploy` with no migration step beside it. `0006` and `0007` were therefore missing on the remote D1 while a Worker that reads `sleep_sessions` was live, and every sleep request answered 500 for a day. Applied by hand on 2026-07-28. Fixing the token fixes both | GitHub → Secrets → Actions |
 | The new web surfaces — basemap, one-channel chart, figure-first cards, stat tiles — are deployed but have never been seen in a browser under a signed-in account. The phone half of every one of them was checked by hand | Session 1 step 6 |
 | ~~Activity detail has never been drawn on a screen~~ — **drawn on a Pixel 8**, real walk, summary and pace chart correct. It exposed two defects: an empty chart on any workout with fewer samples than the chart has columns (fixed, `ChartSeriesTest`), and the moving-time disagreement below | Session 1 step 6 |

@@ -8,7 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.DisposableEffect
 import androidx.core.util.Consumer
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
@@ -25,6 +25,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import dev.healthhub.core.navigation.LocalNavMenu
 import dev.healthhub.core.navigation.NavHostNavigator
 import dev.healthhub.core.network.TokenStore
+import dev.healthhub.feature.updates.UpdateBanner
 import javax.inject.Inject
 
 /**
@@ -128,11 +129,18 @@ private fun AppRoot(
     }
 
     Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            CompositionLocalProvider(LocalNavMenu provides menu) {
+        CompositionLocalProvider(LocalNavMenu provides menu) {
+            Column(modifier = Modifier.padding(padding)) {
+                // Above the graph rather than on a screen: the update is about the app, not
+                // about whatever the athlete happens to be looking at, and this is also where
+                // the quiet twelve-hourly check is started from. It occupies no height until
+                // there is something to say.
+                UpdateBanner(onOpenUpdates = { navigator.navigate(Destination.Updates) })
+
                 NavHost(
                     navController = controller,
                     startDestination = startDestination.route,
+                    modifier = Modifier.weight(1f),
                 ) {
                     // Sorted so the graph is built in a deterministic order regardless of how
                     // the injection set happens to be ordered.

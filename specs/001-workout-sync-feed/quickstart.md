@@ -37,19 +37,35 @@ they do in production.
 
 ## 3. Deploy
 
+Deployment runs in GitHub Actions and nowhere else (Constitution Principle V). Give the
+repository two secrets — **Settings → Secrets and variables → Actions**:
+
+| Secret | What it is |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | a token with *Workers Scripts: Edit* and *D1: Edit* on your account |
+| `CLOUDFLARE_ACCOUNT_ID` | the account id from the Cloudflare dashboard |
+
+Then push, or start the workflow by hand:
+
 ```bash
-npm run build      # builds web/dist, type-checks the Worker
-npx wrangler deploy
+git push origin main               # .github/workflows/deploy.yml
+gh workflow run deploy             # ...or the same thing on demand
 ```
 
-The Worker and the web app go out together as one deployment, reachable at
-`https://healthhub.<your-subdomain>.workers.dev`. No custom domain is needed.
+The workflow builds the SPA, deploys the Worker, applies pending D1 migrations to the remote
+database, and polls `/api/health` until it answers. The Worker and the web app go out together
+as one deployment, reachable at `https://healthhub.<your-subdomain>.workers.dev`. No custom
+domain is needed.
 
-Set the one required secret before the first deploy:
+Set the one required secret on the Worker before the first deployment:
 
 ```bash
 npx wrangler secret put SESSION_PEPPER   # random 32+ byte string
 ```
+
+To check a change without deploying it, `npm run build && npx wrangler deploy --dry-run`. A
+real `wrangler deploy` from a laptop is an emergency lever: it puts a Worker live without the
+migration step beside it, and a Worker running against an unmigrated database answers 500.
 
 ### Optional: Auth0 sign-in
 

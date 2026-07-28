@@ -85,6 +85,13 @@ The signed APK is on the [releases page](https://github.com/andrewkomkov/healthh
 and it talks to the deployment it was built against. Building your own is the point of the next
 section; point it at your own Worker with `HEALTHHUB_BASE_URL` in `local.properties`.
 
+**It updates itself.** There is no store in this architecture, so the app checks the releases
+page twice a day, offers what it finds in a bar over the screen, and installs it after you
+confirm — download, checksum, and the system's own "update this app?" dialog. Nothing is
+installed without that tap, Android still refuses any APK not signed with the same key, and the
+check is one switch away from off on the Updates screen. A fork points it at its own releases
+with `HEALTHHUB_RELEASES_REPO` in `local.properties`.
+
 ## Getting started
 
 See [the quickstart](specs/001-workout-sync-feed/quickstart.md) for the full path from
@@ -93,13 +100,28 @@ clone to running on a phone. In short:
 ```bash
 npx wrangler d1 create healthhub
 npx wrangler r2 bucket create healthhub-data
-npm install && npm run build && npx wrangler deploy
+npm install && npm run build          # deploying is a push to main — see below
 
 cd android && ./gradlew :app:assembleDebug
 # --user 0, and never -g: a second profile hides the data, and pre-granting breaks the
 # in-app permission request outright. See docs/AGENT-NOTES.md.
 adb install --user 0 -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+## Shipping
+
+Nothing goes out from a laptop — the constitution forbids a machine-specific release path, and
+the workflows are what hold the credentials:
+
+| What | How | Workflow |
+|---|---|---|
+| Worker + web app | push to `main`, or `gh workflow run deploy` | [`deploy.yml`](.github/workflows/deploy.yml) — builds, deploys, applies D1 migrations to the remote database, then polls `/api/health` |
+| Android APK | `git tag v0.2.0 && git push --tags` | [`release.yml`](.github/workflows/release.yml) — tests, signed APK, checksum, GitHub Release |
+
+A fork needs `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in Actions secrets for the
+first, and a signing key in `ANDROID_KEYSTORE_BASE64` for the second — see
+[the quickstart](specs/001-workout-sync-feed/quickstart.md). `npx wrangler deploy --dry-run`
+checks a change locally without shipping it.
 
 ## Development
 

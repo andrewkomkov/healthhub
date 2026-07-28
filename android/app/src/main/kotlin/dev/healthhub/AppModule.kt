@@ -21,4 +21,9 @@ object AppModule {
     @Provides
     @Named("appVersion")
     fun appVersion(): String = BuildConfig.VERSION_NAME
+
+    /** Where `feature:updates` looks for a newer APK. A fork points it at its own releases. */
+    @Provides
+    @Named("releasesRepo")
+    fun releasesRepo(): String = BuildConfig.RELEASES_REPO
 }

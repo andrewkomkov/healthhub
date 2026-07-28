@@ -98,6 +98,15 @@ jobs:
           "$apksigner" verify --print-certs "$apk"
           mv "$apk" "healthhub-${{ steps.version.outputs.name }}.apk"
 
+      # The in-app updater downloads this beside the APK and refuses to install a file that
+      # does not match it. The signature check the system performs is what decides whether an
+      # APK may replace the installed app; this catches the other failure — a download that
+      # arrived truncated or altered — before the athlete is asked to confirm anything.
+      - name: Publish the checksum beside it
+        env:
+          APK: healthhub-${{ steps.version.outputs.name }}.apk
+        run: sha256sum "$APK" > "$APK.sha256"
+
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,6 +116,10 @@ jobs:
           cat > notes.md <<'NOTES'
           Install the APK on an Android 9 or newer phone, then sign in and run a sync.
 
+          An app already installed from a previous release will offer this one by itself:
+          it asks GitHub for the latest release twice a day, and installs it after you
+          confirm. Updates → Check for updates does the same on demand.
+
           The app talks to the deployment it was built against — a fork building its own APK
           points it elsewhere with `HEALTHHUB_BASE_URL` in `local.properties`. Analysis runs on
           the phone; the Worker stores what the phone computed and never recomputes it.
@@ -115,9 +128,9 @@ jobs:
           # Re-running a release must not fail on "already exists": the artefact is what matters,
           # and replacing it is the point of running it again.
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" --clobber
+            gh release upload "$TAG" "$APK" "$APK.sha256" --clobber
           else
-            gh release create "$TAG" "$APK" \
+            gh release create "$TAG" "$APK" "$APK.sha256" \
               --title "HealthHub ${{ steps.version.outputs.name }}" \
               --notes-file notes.md \
               --generate-notes

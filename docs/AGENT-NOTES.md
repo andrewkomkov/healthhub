@@ -417,6 +417,61 @@ record id, so re-reading any window is always safe.
 
 ---
 
+## Shipping and the in-app update
+
+Deployment and release both run in Actions — `deploy.yml` on a push to `main`, `release.yml` on
+a tag. Nothing ships from a laptop (Constitution Principle V), and the migration step lives
+*only* in the workflow: a local `wrangler deploy` puts a Worker live against a database that
+was never migrated, which is how every sleep request answered 500 for a day.
+
+`feature:updates` is the other half — there is no store, so the app asks GitHub for its own
+releases and installs what it finds. What that cost to get right:
+
+**Play Protect ends the install session rather than pausing it.** An APK it has never scanned
+produces "Рекомендуется проверка приложения" *after* the athlete has already confirmed the
+update. Choosing to scan returns `STATUS_FAILURE_ABORTED` — the same status as pressing Cancel
+— nothing installs, and the progress bar disappears with no error anywhere. Pressing Install a
+second time then goes straight through. This is why the abandoned path leaves a note on screen
+instead of falling silent. Verified on a Pixel 8, 2026-07-28.
+
+**"Install unknown apps" cannot be requested from a dialog.** It is `REQUEST_INSTALL_PACKAGES`
+in the manifest *plus* a per-app appop the athlete flips in system settings. The only useful
+response to `canRequestPackageInstalls() == false` is to open
+`Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES` for this package — which is what the Install
+button does when the permission is missing, alongside a line saying what happened.
+
+**A debug build cannot be updated by the release APK.** `applicationIdSuffix = ".debug"` makes
+them different packages, so the released APK would install *beside* it. The screen says so and
+offers the release page instead of an install that cannot work.
+
+**Two installed HealthHubs make every deep link ambiguous.** With both the debug and the
+release build on a phone, `am start -a VIEW -d healthhub://updates` opens the app chooser and
+the automated step hangs on it. Always pass `-p dev.healthhub` (or `-p dev.healthhub.debug`).
+
+**`.apk.sha256` does not end in `.apk`** — but it does *contain* it. Matching the release asset
+with `contains` hands 64 bytes of text to the package installer. `ReleasesTest` pins the order
+of the assets too, because the API does not guarantee one.
+
+**`versionCode` and `versionName` are independent, which is what makes this testable.** To
+prove the whole path without uninstalling anything, build a signed release whose *name* is
+older than the published one and whose *code* equals what is installed:
+
+```bash
+ANDROID_VERSION_NAME=0.0.9 ANDROID_VERSION_CODE=1 ./gradlew :app:assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
+```
+
+The app then finds the real release, downloads it, and installs it over itself — data intact,
+same signing key, and the phone ends where it started. A *lower* `versionCode` cannot be
+installed over a higher one at all: `-d` only lifts that for debuggable packages.
+
+**A release built before 2026-07-28 has no `.apk.sha256` beside it.** An absent checksum is
+tolerated rather than treated as a mismatch — refusing to install because a file was never
+published helps nobody, and the signature check that decides whether the APK may replace this
+app happens either way.
+
+---
+
 ## Web client
 
 **MapLibre's worker does not survive bundling.** MapLibre 6 resolves `maplibre-gl-worker.mjs`

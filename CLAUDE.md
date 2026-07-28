@@ -29,9 +29,22 @@ packages/design-tokens/   One token source → Kotlin theme + CSS custom propert
 ```bash
 npm run tokens                     # generated files are NOT committed — run this first
 npm run typecheck && npm test
-npm run build && npx wrangler deploy --config worker/wrangler.jsonc
+npm run build && npx wrangler deploy --dry-run --config worker/wrangler.jsonc
 cd android && ./gradlew :app:assembleDebug && ./gradlew test
 ```
+
+## Shipping
+
+Nothing is released from a laptop (Constitution Principle V). Both paths are one push:
+
+```bash
+git push origin main               # deploy.yml: worker + web, then d1 migrations --remote
+git tag v0.2.0 && git push --tags  # release.yml: tests, signed APK, checksum, GitHub Release
+```
+
+The installed app finds that release by itself — `feature:updates` asks GitHub twice a day and
+installs after the athlete confirms. `gh workflow run deploy` re-runs a deployment; the local
+`wrangler deploy` is for emergencies, and it skips the migration step that goes with it.
 
 ## Environment
 

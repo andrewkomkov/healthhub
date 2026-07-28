@@ -12,10 +12,21 @@ plugins {
  * The deployment this build talks to. Overridable from local.properties so a fork points at
  * its own Worker without editing tracked files.
  */
-val baseUrl: String = Properties().apply {
+val localProperties: Properties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) file.inputStream().use { load(it) }
-}.getProperty("HEALTHHUB_BASE_URL") ?: "https://healthhub.andrew-komkov.workers.dev"
+}
+
+val baseUrl: String = localProperties.getProperty("HEALTHHUB_BASE_URL")
+    ?: "https://healthhub.andrew-komkov.workers.dev"
+
+/**
+ * The repository the in-app update check asks for releases. Overridable for the same reason
+ * as the base URL: a fork ships its own APKs, and pointing its users at this repository's
+ * releases would offer them an app signed with a key their install cannot accept.
+ */
+val releasesRepo: String = localProperties.getProperty("HEALTHHUB_RELEASES_REPO")
+    ?: "andrewkomkov/healthhub"
 
 /**
  * The release signing identity, or null when this machine does not hold it.
@@ -26,13 +37,9 @@ val baseUrl: String = Properties().apply {
  * pull request should get, rather than a build failure that reads like a broken project.
  */
 val releaseKeystore: Map<String, String>? = run {
-    val local = Properties().apply {
-        val file = rootProject.file("local.properties")
-        if (file.exists()) file.inputStream().use { load(it) }
-    }
     fun value(env: String, property: String): String? =
         System.getenv(env)?.takeIf { it.isNotBlank() }
-            ?: local.getProperty(property)?.takeIf { it.isNotBlank() }
+            ?: localProperties.getProperty(property)?.takeIf { it.isNotBlank() }
 
     val path = value("ANDROID_KEYSTORE_PATH", "androidKeystorePath") ?: return@run null
     val storePassword = value("ANDROID_KEYSTORE_PASSWORD", "androidKeystorePassword") ?: return@run null
@@ -57,6 +64,7 @@ android {
         versionName = System.getenv("ANDROID_VERSION_NAME") ?: "0.1.0"
 
         buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
+        buildConfigField("String", "RELEASES_REPO", "\"$releasesRepo\"")
     }
 
     signingConfigs {
@@ -132,6 +140,7 @@ dependencies {
     implementation(project(":feature:sources"))
     implementation(project(":feature:health"))
     implementation(project(":feature:about"))
+    implementation(project(":feature:updates"))
 
     debugImplementation(project(":core:devcontrol"))
 

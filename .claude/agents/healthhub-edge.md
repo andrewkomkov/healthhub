@@ -49,15 +49,20 @@ No other database engine, ever.
 ```bash
 npm --workspace worker run typecheck
 npm --workspace worker run test
-npx wrangler d1 migrations apply healthhub --remote --config worker/wrangler.jsonc
-npm run build && npx wrangler deploy --config worker/wrangler.jsonc
+npm run build && npx wrangler deploy --dry-run --config worker/wrangler.jsonc
+git push origin main                       # deploy.yml deploys, then applies migrations
+gh run watch                               # ...and this is where you find out whether it worked
 npx wrangler tail --format pretty          # production errors, in real time
 ```
 
-Deploy only from the repo root, always with `--config worker/wrangler.jsonc`.
+**Deployment is `deploy.yml`, not your shell** (Constitution Principle V). The workflow holds
+the Cloudflare token, and it is the one thing that runs `d1 migrations apply --remote` — a
+local `wrangler deploy` puts a Worker live against a database that was never migrated, which
+is exactly how every sleep request answered 500 for a day. Always `--config
+worker/wrangler.jsonc`, always from the repo root, on the rare occasion you run wrangler at all.
 
 ## Definition of done
 
-Typecheck clean, tests green, migration applied to remote, deployed, and the change exercised
-against the live URL with `curl` — not just locally. Local `workerd` is more permissive than
-production; the PBKDF2 incident is exactly that trap.
+Typecheck clean, tests green, the `deploy` run green — deployment and migration both — and the
+change exercised against the live URL with `curl`, not just locally. Local `workerd` is more
+permissive than production; the PBKDF2 incident is exactly that trap.

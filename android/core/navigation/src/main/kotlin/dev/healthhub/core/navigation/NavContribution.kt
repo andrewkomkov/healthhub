@@ -123,6 +123,11 @@ sealed interface Destination {
         override val route = "about"
     }
 
+    /** What version is installed, what version exists, and the way from one to the other. */
+    data object Updates : Destination {
+        override val route = "updates"
+    }
+
     companion object {
         /** Every route the deep-link router must handle. Kept beside the definitions so a
          *  new screen cannot be added without this list noticing. */
@@ -136,6 +141,7 @@ sealed interface Destination {
             Sources.route,
             Health.route,
             About.route,
+            Updates.route,
         )
     }
 }

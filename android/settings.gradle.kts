@@ -46,5 +46,6 @@ include(":feature:sync")
 include(":feature:settings")
 include(":feature:sources")
 include(":feature:health")
+include(":feature:updates")
 // Deliberately trivial. It exists to keep SC-012 honest — see feature/about.
 include(":feature:about")

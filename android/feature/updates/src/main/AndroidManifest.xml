@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Declared beside the code that uses it rather than in the app manifest, for the same
+      reason the health permissions live in core:healthconnect: the module that asks is the
+      module that declares, so removing the module removes the permission.
+
+      This one is only half a permission. It lets the app *ask* to install a package; the
+      athlete still grants "install unknown apps" by hand in system settings, and the system
+      still refuses any APK not signed with this app's key.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <!--
+          Not exported: the only sender is the PendingIntent this app hands to the install
+          session, and that intent names the component explicitly.
+        -->
+        <receiver
+            android:name="dev.healthhub.feature.updates.InstallResultReceiver"
+            android:exported="false" />
+    </application>
+</manifest>

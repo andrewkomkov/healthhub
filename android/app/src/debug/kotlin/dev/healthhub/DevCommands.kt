@@ -16,6 +16,7 @@ import dev.healthhub.core.healthconnect.HealthConnectSource
 import dev.healthhub.core.network.HealthHubApi
 import dev.healthhub.core.network.TokenStore
 import dev.healthhub.core.sync.SyncEngine
+import dev.healthhub.feature.updates.UpdateRepository
 import javax.inject.Inject
 import javax.inject.Named
 
@@ -171,6 +172,40 @@ class ThemeCommand @Inject constructor(
     }
 }
 
+/**
+ * The update check on demand, without waiting for the twelve-hour timer.
+ *
+ * `install` is deliberately a separate command: the check is safe to run in a loop, and the
+ * install ends in a system dialog that a scripted run has to be ready for.
+ */
+class UpdateCommand @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val updates: UpdateRepository,
+) : DevCommand {
+    override val name = "update"
+    override val usage = "[--es action install] — check GitHub for a newer release, or install it"
+
+    override suspend fun run(args: Map<String, String>): Map<String, String> {
+        val update = updates.check()
+        val base = mapOf(
+            "current" to updates.currentVersion,
+            "available" to (update?.version ?: ""),
+            "apk" to (update?.apkUrl ?: ""),
+            "installsInPlace" to updates.installsInPlace.toString(),
+        )
+        if (args["action"] != "install" || update == null) return base
+
+        // A debug build cannot be replaced by the released package — its application id
+        // carries `.debug` — so say so rather than opening a session that cannot succeed.
+        if (!updates.installsInPlace) return base + ("installed" to "not applicable")
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            return base + ("installed" to "blocked: grant install-unknown-apps first")
+        }
+        updates.install(update)
+        return base + ("installed" to "handed to the system installer")
+    }
+}
+
 /** The observable-state dump an automated run asserts against. */
 class StateCommand @Inject constructor(
     private val tokens: TokenStore,
@@ -205,5 +240,6 @@ abstract class DevCommandsModule {
     @Binds @IntoSet abstract fun routes(command: RouteBackfillCommand): DevCommand
     @Binds @IntoSet abstract fun feed(command: FeedCommand): DevCommand
     @Binds @IntoSet abstract fun theme(command: ThemeCommand): DevCommand
+    @Binds @IntoSet abstract fun update(command: UpdateCommand): DevCommand
     @Binds @IntoSet abstract fun state(command: StateCommand): DevCommand
 }
