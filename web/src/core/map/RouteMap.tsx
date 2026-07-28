@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import {
   Map as MapLibreMap,
   NavigationControl,
@@ -10,17 +10,28 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import type { Feature, FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useChartTheme } from '../charts/theme'
-import { padBounds, routeFeatureCollection, routeGeometry, type Position } from './route'
+import { padBounds, routeFeatureCollection, type Position, type RouteGeometry } from './route'
 
 /**
- * The route, drawn by MapLibre under a style built from the design tokens.
+ * The route, drawn by MapLibre over an openly licensed basemap.
  *
- * There is no map account to sign up for and no key to configure, which is a deliberate
- * consequence of the constitution's "clone and run" constraint: the default style is the
- * product's own surface colour with the route on top, and a basemap appears only if the
- * deployment points `VITE_MAP_TILES_URL` at a tile source it is entitled to use. A route
- * without a basemap still answers the question the athlete is asking — what shape was this
- * ride, and where on it was I going fast.
+ * There is still no map account to sign up for and no key to configure — the constitution's
+ * "clone and run" constraint rules those out — but "no key" no longer means "no basemap". The
+ * default is OpenFreeMap: OpenStreetMap data, rendered through the OpenMapTiles schema, served
+ * from a public instance that asks for no registration and sets no limits, and self-hostable by
+ * anyone who outgrows it. That is R-009's "openly licensed vector tile source" arriving four
+ * sessions late. `VITE_MAP_TILES_URL` still overrides it, and `none` still turns it off for a
+ * deployment that must not talk to a third party at all.
+ *
+ * Two things follow from the basemap being remote rather than a colour we own:
+ *
+ *  - **The route does not depend on it.** If the style cannot be fetched — offline, blocked,
+ *    or simply slow — the map falls back to the product's own surface colour and draws the
+ *    ride on that. A route without a basemap still answers what the athlete is asking: what
+ *    shape was this ride, and where on it was I going fast.
+ *  - **It is knocked back before the route goes on it.** A full-strength basemap competes with
+ *    the line that is the actual subject; a scrim of the product surface over it does what
+ *    `raster-opacity` does for the raster path.
  *
  * Gaps in the fix are gaps in the line. That is `routeGeometry`'s job, and it is tested
  * without a WebGL context precisely so this file can stay thin.
@@ -34,17 +45,108 @@ import { padBounds, routeFeatureCollection, routeGeometry, type Position } from 
  */
 setWorkerUrl(workerUrl)
 
-const TILES_URL = import.meta.env['VITE_MAP_TILES_URL'] as string | undefined
+/**
+ * The two default styles, one per palette. Both are MapLibre style documents that name their
+ * own sources, glyphs and sprites, so nothing here has to know the tile URL — and both carry
+ * their attribution in the TileJSON they point at, which is how the control below gets its
+ * credit line without this file writing one.
+ */
+const OPENFREEMAP = {
+  light: 'https://tiles.openfreemap.org/styles/positron',
+  dark: 'https://tiles.openfreemap.org/styles/dark',
+}
+
+const CONFIGURED_TILES = (
+  (import.meta.env['VITE_MAP_TILES_URL'] as string | undefined) ?? ''
+).trim()
 const TILES_ATTRIBUTION = import.meta.env['VITE_MAP_TILES_ATTRIBUTION'] as string | undefined
+
+/** How far the basemap is knocked back towards the product surface before the route goes on. */
+const SCRIM_ALPHA = 0.22
+
+/**
+ * How long a style may take before the route is drawn without it.
+ *
+ * A failed fetch raises `error` and is handled the moment it happens; a *hung* one raises
+ * nothing at all, and the athlete is left looking at an empty rectangle wondering whether the
+ * ride recorded. Long enough not to fire on a slow train connection, short enough that nobody
+ * concludes the map is broken.
+ */
+const STYLE_TIMEOUT_MS = 6000
 
 const ROUTE_SOURCE = 'route'
 const MARKER_SOURCE = 'cursor'
 const ENDS_SOURCE = 'ends'
+const SCRIM_LAYER = 'basemap-scrim'
+
+type Basemap =
+  /** A whole MapLibre style document, fetched by the renderer. Vector, and the default. */
+  | { kind: 'style'; url: string }
+  /** A `{z}/{x}/{y}` template, wrapped in a style of ours. What the option used to mean. */
+  | { kind: 'raster'; url: string }
+  | null
+
+/**
+ * Which basemap this deployment gets.
+ *
+ * One option covers both shapes because a deployment configuring a tile source knows which one
+ * it has, and `{z}` tells the two apart with no ambiguity: a style document never contains it,
+ * and a tile template always does.
+ */
+function basemapFor(dark: boolean): Basemap {
+  if (CONFIGURED_TILES.toLowerCase() === 'none') return null
+  if (CONFIGURED_TILES === '')
+    return { kind: 'style', url: dark ? OPENFREEMAP.dark : OPENFREEMAP.light }
+  if (CONFIGURED_TILES.includes('{z}')) return { kind: 'raster', url: CONFIGURED_TILES }
+  return { kind: 'style', url: CONFIGURED_TILES }
+}
+
+/**
+ * The style this file owns: the product's surface colour, and a raster basemap on it if one is
+ * configured. Also the fallback when a remote style does not arrive, which is why it takes no
+ * network of its own.
+ */
+function localStyle(surface: string, raster: Basemap): StyleSpecification {
+  const tiles = raster?.kind === 'raster' ? raster.url : null
+  return {
+    version: 8,
+    sources: tiles
+      ? {
+          basemap: {
+            type: 'raster',
+            tiles: [tiles],
+            tileSize: 256,
+            attribution: TILES_ATTRIBUTION ?? '',
+          },
+        }
+      : {},
+    layers: [
+      { id: 'background', type: 'background', paint: { 'background-color': surface } },
+      ...(tiles
+        ? [
+            {
+              id: 'basemap',
+              type: 'raster' as const,
+              source: 'basemap',
+              // Held back from full opacity so the route stays the brightest thing on it.
+              paint: { 'raster-opacity': 0.85, 'raster-saturation': -0.3 },
+            },
+          ]
+        : []),
+    ],
+  }
+}
 
 export interface RouteMapProps {
+  /**
+   * The segmented track. Computed by the caller rather than here, because "is there anything to
+   * draw" is a question the *screen* has to answer too — it is what decides between this map and
+   * the explanation that stands in for it — and answering it in two places is how a recording
+   * with a single stored fix ended up rendering neither.
+   */
+  geometry: RouteGeometry
   lat: Float64Array | null
   lon: Float64Array | null
-  time: Float64Array | null
   /** Sample the chart cursor is over; the marker follows it. */
   cursorIndex: number | null
   height?: number
@@ -59,59 +161,67 @@ function pointFeature(position: Position | null): FeatureCollection {
   }
 }
 
-export function RouteMap({ lat, lon, time, cursorIndex, height = 320 }: RouteMapProps) {
+export function RouteMap({ geometry, lat, lon, cursorIndex, height = 320 }: RouteMapProps) {
   const theme = useChartTheme()
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<MapLibreMap | null>(null)
   const ready = useRef(false)
 
-  const geometry = useMemo(() => routeGeometry(lat, lon, time), [lat, lon, time])
-
   useEffect(() => {
     const node = container.current
     if (!node || geometry.bounds === null) return
 
-    const style: StyleSpecification = {
-      version: 8,
-      sources: TILES_URL
-        ? {
-            basemap: {
-              type: 'raster',
-              tiles: [TILES_URL],
-              tileSize: 256,
-              attribution: TILES_ATTRIBUTION ?? '',
-            },
-          }
-        : {},
-      layers: [
-        { id: 'background', type: 'background', paint: { 'background-color': theme.surface } },
-        ...(TILES_URL
-          ? [
-              {
-                id: 'basemap',
-                type: 'raster' as const,
-                source: 'basemap',
-                // Held back from full opacity so the route stays the brightest thing on it.
-                paint: { 'raster-opacity': 0.85, 'raster-saturation': -0.3 },
-              },
-            ]
-          : []),
-      ],
-    }
+    const basemap = basemapFor(theme.isDark)
+    const remote = basemap?.kind === 'style' ? basemap.url : null
 
     const instance = new MapLibreMap({
       container: node,
-      style,
+      style: remote ?? localStyle(theme.surface, basemap),
       bounds: padBounds(geometry.bounds),
       dragRotate: false,
       pitchWithRotate: false,
       touchZoomRotate: true,
-      attributionControl: TILES_URL ? undefined : false,
+      attributionControl: basemap ? undefined : false,
     })
     instance.touchZoomRotate.disableRotation()
     instance.addControl(new NavigationControl({ showCompass: false }), 'top-right')
 
+    /*
+     * Drop the remote style and draw the ride on the product's own surface instead.
+     *
+     * Called from two places — an `error` before the style arrived, and the timeout — and it has
+     * to be safe from both, hence the guard. `diff: false` because there is nothing to diff
+     * against: whatever the failed style left behind is not a style this one is a change to.
+     */
+    let settled = false
+    let onBasemap = remote !== null
+    const withoutBasemap = () => {
+      if (settled) return
+      settled = true
+      onBasemap = false
+      instance.setStyle(localStyle(theme.surface, null), { diff: false })
+    }
+
+    const timer = window.setTimeout(withoutBasemap, STYLE_TIMEOUT_MS)
+    // Tile and glyph failures raise this too, and they are not fatal — the guard is what tells
+    // "the style never came" apart from "one tile in the corner did not".
+    instance.on('error', withoutBasemap)
+
     instance.on('load', () => {
+      window.clearTimeout(timer)
+      settled = true
+
+      // Over the vendor's own layers, under everything of ours: the basemap is context for the
+      // route, not the subject. A background layer covers the viewport wherever it sits in the
+      // order, which is what makes this a scrim rather than a fill needing geometry.
+      if (onBasemap) {
+        instance.addLayer({
+          id: SCRIM_LAYER,
+          type: 'background',
+          paint: { 'background-color': theme.surface, 'background-opacity': SCRIM_ALPHA },
+        })
+      }
+
       instance.addSource(ROUTE_SOURCE, {
         type: 'geojson',
         data: routeFeatureCollection(geometry),
@@ -182,6 +292,7 @@ export function RouteMap({ lat, lon, time, cursorIndex, height = 320 }: RouteMap
     // test rather than by a human squinting at a screenshot.
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>)['__hhMap'] = instance
     return () => {
+      window.clearTimeout(timer)
       ready.current = false
       map.current = null
       instance.remove()

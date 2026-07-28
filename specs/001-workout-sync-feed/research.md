@@ -234,6 +234,14 @@ constraints.
 incompatible with "clone and run"; *Leaflet with raster tiles* — no vector styling, so the
 map cannot be themed, and raster tiles look wrong beside an Expressive UI.
 
+**The source, decided later**: OpenFreeMap — OpenStreetMap data through the OpenMapTiles
+schema, on a public instance with no registration, no key and no request limit, and
+self-hostable by anyone who outgrows it. Positron under a light palette, its dark style under a
+dark one, with a scrim of the product surface over the top so the route stays the subject. Both
+clients keep an override (`VITE_MAP_TILES_URL`, `hh_map_tiles_url`) that also accepts a raster
+template, and `none` for a deployment that must reach nobody. Neither client's route depends on
+the style arriving: see the notes on `load` and `setStyle` in AGENT-NOTES.
+
 ## R-010 — Material 3 Expressive on the web
 
 **Decision**: A hand-built React component layer implementing the Expressive specification

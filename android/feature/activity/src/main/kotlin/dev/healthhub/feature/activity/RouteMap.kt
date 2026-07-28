@@ -27,10 +27,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import dev.healthhub.core.designsystem.ExpressiveShapes
 import dev.healthhub.core.designsystem.GeneratedTokens
 import dev.healthhub.core.designsystem.LocalChartChrome
+import dev.healthhub.core.designsystem.LocalIsDark
 import dev.healthhub.core.designsystem.channelColor
 import java.util.Locale
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraUpdateFactory
 import org.maplibre.android.geometry.LatLngBounds
@@ -38,6 +40,7 @@ import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapLibreMapOptions
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.layers.BackgroundLayer
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory
@@ -47,14 +50,20 @@ import org.maplibre.android.style.sources.RasterSource
 import org.maplibre.android.style.sources.TileSet
 
 /**
- * The route, drawn by MapLibre Native under a style built from the design tokens.
+ * The route, drawn by MapLibre Native over an openly licensed basemap.
  *
- * There is no map account to sign up for and no key to configure, which is a deliberate
- * consequence of the constitution's "clone and run" constraint: the default style is the
- * product's own surface colour with the route on top, and a basemap appears only if a
- * deployment sets `hh_map_tiles_url` to a tile source it is entitled to use — the same rule and
- * the same look as the web client's `VITE_MAP_TILES_URL`. A route without a basemap still
- * answers the question the athlete is asking: what shape was this ride, and where on it was I.
+ * There is still no map account to sign up for and no key to configure — the constitution's
+ * "clone and run" constraint rules those out — but "no key" no longer means "no basemap". The
+ * default is OpenFreeMap: OpenStreetMap data through the OpenMapTiles schema, served from a
+ * public instance that asks for no registration and sets no limits, and self-hostable by anyone
+ * who outgrows it. `hh_map_tiles_url` still overrides it and `none` still turns it off, exactly
+ * as `VITE_MAP_TILES_URL` does in the browser — the two clients read the same ride the same way.
+ *
+ * Two things follow from the basemap being remote rather than a colour we own. The route does
+ * not depend on it: a style that fails or hangs is dropped for the product's own surface, and a
+ * route without a basemap still answers what the athlete is asking. And it is knocked back
+ * before the route goes on it, because a full-strength basemap competes with the line that is
+ * the actual subject.
  *
  * Gaps in the fix are gaps in the line. That is [Route.geometry]'s job, and it is unit-tested
  * without a GL context precisely so this file can stay thin.
@@ -64,6 +73,43 @@ private const val START_SOURCE = "route-start"
 private const val FINISH_SOURCE = "route-finish"
 private const val MARKER_SOURCE = "cursor"
 private const val BASEMAP_SOURCE = "basemap"
+private const val SCRIM_LAYER = "basemap-scrim"
+
+/** The two defaults, one per palette. A daylight basemap under a dark UI is a torch. */
+private const val OPENFREEMAP_LIGHT = "https://tiles.openfreemap.org/styles/positron"
+private const val OPENFREEMAP_DARK = "https://tiles.openfreemap.org/styles/dark"
+
+/** How far the basemap is knocked back towards the product surface before the route goes on. */
+private const val SCRIM_ALPHA = 0.22f
+
+/**
+ * How long a style may take before the ride is drawn without it.
+ *
+ * A style that fails reports it and is handled at once; a style that *hangs* reports nothing at
+ * all, and the athlete is left looking at an empty rectangle wondering whether the ride
+ * recorded. Long enough not to fire on a train, short enough that nobody concludes it is broken.
+ */
+private const val STYLE_TIMEOUT_MS = 6000L
+
+/**
+ * Which basemap this build gets. One resource covers both shapes because `{z}` tells them
+ * apart with no ambiguity: a style document never contains it, a tile template always does.
+ */
+private sealed interface Basemap {
+    /** A whole MapLibre style document, fetched by the renderer. Vector, and the default. */
+    data class Vector(val url: String) : Basemap
+
+    /** A `{z}/{x}/{y}` template wrapped in a style of ours. What the resource used to mean. */
+    data class Raster(val url: String) : Basemap
+}
+
+private fun basemapFor(configured: String, dark: Boolean): Basemap? {
+    val value = configured.trim()
+    if (value.equals("none", ignoreCase = true)) return null
+    if (value.isEmpty()) return Basemap.Vector(if (dark) OPENFREEMAP_DARK else OPENFREEMAP_LIGHT)
+    if (value.contains("{z}")) return Basemap.Raster(value)
+    return Basemap.Vector(value)
+}
 
 private const val EMPTY_COLLECTION = """{"type":"FeatureCollection","features":[]}"""
 private const val CAMERA_PADDING_DP = 24f
@@ -72,13 +118,18 @@ private val MAP_HEIGHT = 260.dp
 
 @Composable
 internal fun RouteMap(
+    /**
+     * The segmented track. Computed by the caller rather than here, because "is there anything
+     * to draw" is a question the *screen* has to answer too — it is what decides between this
+     * map and the card that stands in for it — and answering it in two places is how a recording
+     * with a single stored fix ended up rendering neither.
+     */
+    geometry: RouteGeometry,
     lat: DoubleArray?,
     lon: DoubleArray?,
-    time: DoubleArray?,
     cursor: State<Int?>,
     modifier: Modifier = Modifier,
 ) {
-    val geometry = remember(lat, lon, time) { Route.geometry(lat, lon, time) }
     val bounds = geometry.bounds ?: return
 
     val context = LocalContext.current
@@ -90,6 +141,7 @@ internal fun RouteMap(
     val routeColour = channelColor("speed")
     val startColour = channelColor("elevation")
     val finishColour = channelColor("hr")
+    val dark = LocalIsDark.current
     val tilesUrl = stringResource(R.string.hh_map_tiles_url)
     val tilesAttribution = stringResource(R.string.hh_map_tiles_attribution)
     val cameraPaddingPx = with(LocalDensity.current) { CAMERA_PADDING_DP.dp.roundToPx() }
@@ -128,19 +180,32 @@ internal fun RouteMap(
      * restarted when the palette changes, which is what carries a Material You switch or a move
      * to dark onto the map rather than leaving it wearing yesterday's colours.
      */
-    LaunchedEffect(mapView, geometry, chrome, bed, routeColour, tilesUrl) {
+    LaunchedEffect(mapView, geometry, chrome, bed, routeColour, tilesUrl, dark) {
         val map = mapView.awaitMap()
+        val basemap = basemapFor(tilesUrl, dark)
         map.uiSettings.apply {
-            isAttributionEnabled = tilesUrl.isNotBlank()
-            isLogoEnabled = tilesUrl.isNotBlank()
+            isAttributionEnabled = basemap != null
+            isLogoEnabled = basemap != null
             isRotateGesturesEnabled = false
             isTiltGesturesEnabled = false
         }
 
-        val style = map.awaitStyle(Style.Builder().fromJson(backgroundStyle(bed)))
+        val local = Style.Builder().fromJson(backgroundStyle(bed))
+        // A remote style that fails reports it and a remote style that hangs does not, so both
+        // are given the same answer: draw the ride on the product's own surface and move on.
+        var onBasemap = false
+        val style = if (basemap is Basemap.Vector) {
+            val loaded = withTimeoutOrNull(STYLE_TIMEOUT_MS) {
+                mapView.awaitStyle(map, Style.Builder().fromUri(basemap.url))
+            }
+            onBasemap = loaded != null
+            loaded ?: mapView.awaitStyle(map, local) ?: return@LaunchedEffect
+        } else {
+            mapView.awaitStyle(map, local) ?: return@LaunchedEffect
+        }
 
-        if (tilesUrl.isNotBlank()) {
-            val tiles = TileSet(TILEJSON_VERSION, tilesUrl).apply {
+        if (basemap is Basemap.Raster) {
+            val tiles = TileSet(TILEJSON_VERSION, basemap.url).apply {
                 // Whoever configured the tile source is the one who knows what it must credit.
                 if (tilesAttribution.isNotBlank()) attribution = tilesAttribution
             }
@@ -150,6 +215,18 @@ internal fun RouteMap(
                     // Held back from full opacity so the route stays the brightest thing on it.
                     PropertyFactory.rasterOpacity(0.85f),
                     PropertyFactory.rasterSaturation(-0.3f),
+                ),
+            )
+        }
+
+        // Over the vendor's own layers, under everything of ours: the basemap is context for
+        // the route, not the subject. A background layer covers the viewport wherever it sits
+        // in the order, which is what makes this a scrim rather than a fill needing geometry.
+        if (onBasemap) {
+            style.addLayer(
+                BackgroundLayer(SCRIM_LAYER).withProperties(
+                    PropertyFactory.backgroundColor(bed.toArgb()),
+                    PropertyFactory.backgroundOpacity(SCRIM_ALPHA),
                 ),
             )
         }
@@ -251,9 +328,28 @@ private suspend fun MapView.awaitMap(): MapLibreMap = suspendCancellableCoroutin
     getMapAsync { map -> continuation.resume(map) }
 }
 
-private suspend fun MapLibreMap.awaitStyle(builder: Style.Builder): Style =
+/**
+ * The style once it is loaded, or null if the map reported that it could not load it.
+ *
+ * `setStyle` only ever calls back on success, so a URL that 404s or a device with no network
+ * leaves the caller suspended forever — and the screen showing a container with nothing in it,
+ * which is indistinguishable from a bug in this file. The failure listener is the other half of
+ * the callback pair; a hang, which reports neither, is the caller's timeout to handle.
+ */
+private suspend fun MapView.awaitStyle(map: MapLibreMap, builder: Style.Builder): Style? =
     suspendCancellableCoroutine { continuation ->
-        setStyle(builder) { style -> continuation.resume(style) }
+        val listener = object : MapView.OnDidFailLoadingMapListener {
+            override fun onDidFailLoadingMap(errorMessage: String) {
+                removeOnDidFailLoadingMapListener(this)
+                if (continuation.isActive) continuation.resume(null)
+            }
+        }
+        addOnDidFailLoadingMapListener(listener)
+        continuation.invokeOnCancellation { removeOnDidFailLoadingMapListener(listener) }
+        map.setStyle(builder) { style ->
+            removeOnDidFailLoadingMapListener(listener)
+            if (continuation.isActive) continuation.resume(style)
+        }
     }
 
 private fun backgroundStyle(surface: Color): String =

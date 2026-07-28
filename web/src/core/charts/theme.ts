@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { contrastRatio } from '../m3e/contrast'
 
 /**
  * Chart chrome read from the generated token sheet.
@@ -21,6 +22,15 @@ export interface ChartTheme {
    * to draw a gap ring around the cursor dot that matches what CSS painted underneath it.
    */
   bed: string
+  /**
+   * Whether the palette in force is a dark one.
+   *
+   * Derived from the surface rather than from `prefers-color-scheme`, because three things
+   * decide it — the OS, the in-app toggle and the Material You sheet pushed from the phone —
+   * and only the resolved colour knows about all three. The map reads it to pick a basemap:
+   * a daylight basemap under a dark UI is the one thing on the screen still holding a torch.
+   */
+  isDark: boolean
   inkPrimary: string
   inkSecondary: string
   inkMuted: string
@@ -66,14 +76,31 @@ export function toPixels(value: string, fallbackPx: number): number {
   return amount * (Number.isFinite(root) && root > 0 ? root : 16)
 }
 
+/**
+ * Is this surface further from white than it is from black?
+ *
+ * A luminance threshold would need a number picked out of the air; this asks the question the
+ * eye asks. A token that is not a plain `#RRGGBB` — nothing publishes one today, but a dynamic
+ * sheet is written by a device — is treated as light, which is what the fallback palette is.
+ */
+function isDarkSurface(surface: string): boolean {
+  try {
+    return contrastRatio(surface, '#FFFFFF') > contrastRatio(surface, '#000000')
+  } catch {
+    return false
+  }
+}
+
 function snapshot(version: number): ChartTheme {
   const styles = getComputedStyle(document.documentElement)
   const lineWidth = Number.parseFloat(read(styles, '--chart-mark-line-width', '2'))
   const fontFamily = read(styles, '--md-sys-type-font-family', 'system-ui, sans-serif')
   const labelPx = toPixels(read(styles, '--md-sys-type-label-small-size', '0.6875rem'), 11)
+  const surface = read(styles, '--chart-surface', '#FFF8F5')
 
   return {
-    surface: read(styles, '--chart-surface', '#FFF8F5'),
+    surface,
+    isDark: isDarkSurface(surface),
     bed: read(styles, '--md-sys-color-surface-container-highest', '#F1DFD6'),
     inkPrimary: read(styles, '--chart-ink-primary', '#211A15'),
     inkSecondary: read(styles, '--chart-ink-secondary', '#52443A'),

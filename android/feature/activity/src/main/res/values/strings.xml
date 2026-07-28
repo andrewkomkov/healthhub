@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    The map has no account and no key. A basemap appears only if a deployment configures a tile
-    source it is entitled to use, exactly as the web client only shows one when VITE_MAP_TILES_URL
-    is set. Override these in :app (or a product flavour) to point at that source; left empty, the
-    route is drawn on the product's own surface colour and nothing is fetched from anyone.
+    The map has no account and no key. Left empty, the route is drawn over OpenFreeMap — OSM data
+    on a public instance that asks for no registration and sets no limits — exactly as the web
+    client does when VITE_MAP_TILES_URL is unset. Override these in :app (or a product flavour)
+    to point at a tile source of your own; a build that must not talk to a third party at all
+    sets the URL to "none" and gets the product's own surface colour under the route instead.
 
-    The URL is a tile template, e.g. https://tiles.example.org/{z}/{x}/{y}.png
+    Two shapes are accepted, told apart by {z}: a MapLibre style document, e.g.
+    https://tiles.example.org/styles/positron, or a raster tile template, e.g.
+    https://tiles.example.org/{z}/{x}/{y}.png. A style document carries its own attribution; the
+    string below is for the raster case, where only whoever configured it knows what it credits.
 -->
 <resources>
     <string name="hh_map_tiles_url" translatable="false"></string>
