@@ -96,6 +96,18 @@ body {
 }
 /* The Expressive emphasised role: same size, heavier weight. Prominence is a role here, not a
    hand-picked font-size, which is what keeps the phone and the browser agreeing. */
+.t-title-large-emphasized {
+  font-size: var(--md-sys-type-title-large-emphasized-size);
+  line-height: var(--md-sys-type-title-large-emphasized-line-height);
+  font-weight: var(--md-sys-type-title-large-emphasized-weight, 600);
+  letter-spacing: var(--md-sys-type-title-large-emphasized-tracking);
+}
+.t-headline-large-emphasized {
+  font-size: var(--md-sys-type-headline-large-emphasized-size);
+  line-height: var(--md-sys-type-headline-large-emphasized-line-height);
+  font-weight: var(--md-sys-type-headline-large-emphasized-weight, 600);
+  letter-spacing: var(--md-sys-type-headline-large-emphasized-tracking);
+}
 .t-title-medium-emphasized {
   font-size: var(--md-sys-type-title-medium-emphasized-size);
   line-height: var(--md-sys-type-title-medium-emphasized-line-height);
@@ -366,6 +378,9 @@ body {
  */
 .hh-chip {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hh-space-sm);
   min-height: 40px;
   padding: 0 var(--hh-space-lg);
   border: 1px solid var(--md-sys-color-outline);
@@ -400,25 +415,118 @@ body {
   cursor: not-allowed;
 }
 
+/* -------------------------------------------------------------------------- feed */
+
+.hh-feed-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-sm);
+  padding: var(--hh-space-lg);
+}
+
+.hh-feed-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--hh-space-sm);
+}
+
+/* Takes the slack so the route mark is pushed to the far edge of the card. */
+.hh-feed-card__when {
+  flex: 1;
+}
+
+.hh-feed-card__mark {
+  display: inline-flex;
+  color: var(--md-sys-color-primary);
+}
+
+.hh-feed-card__title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A figure and its icon, wrapping.
+ *
+ * No chip container around each: a feed of them is a wall of outlines, and the icon is already
+ * the thing that makes the figure findable without reading it.
+ */
+.hh-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--hh-space-xs) var(--hh-space-lg);
+}
+
+.hh-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hh-space-xs);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+/*
+ * One figure, in its own container, under its icon and name.
+ *
+ * Ten label-and-value pairs inside one card is a table, and a table is read by scanning a column
+ * — but a wrapping row has no column, so the eye has to walk it item by item. Each figure in its
+ * own tonal container has an edge to stop at, which is what lets "Avg HR" be found without
+ * reading the nine beside it. The phone draws the identical tile.
+ */
+.hh-stats-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--hh-space-sm);
+}
+
+.hh-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-xs);
+  padding: var(--hh-space-md);
+  background: var(--md-sys-color-surface-container-high);
+  border-radius: var(--md-sys-shape-large-increased);
+}
+
+.hh-tile__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hh-space-xs);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
 /* ------------------------------------------------------------------------ charts */
 
-.hh-chart-stack {
+.hh-chart {
   display: flex;
   flex-direction: column;
   gap: var(--hh-space-md);
   width: 100%;
-}
-
-.hh-chart {
   margin: 0;
 }
 
-.hh-chart__header {
+/* Channels wrap: a ride with five of them does not fit one line on a phone-width window. */
+.hh-chips--wrap {
+  flex-wrap: wrap;
+  row-gap: var(--hh-space-sm);
+}
+
+/*
+ * The value is the headline.
+ *
+ * The number under the pointer is the thing being read, so it is set in the emphasised headline
+ * role in the channel's own colour, above the plot — not floating on the curve, where a tall
+ * series simply covers it. Under it, in one quiet line, *where* on the ride that reading is.
+ */
+.hh-chart__value {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--hh-space-md);
-  padding-bottom: var(--hh-space-xs);
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hh-chart__where {
+  color: var(--md-sys-color-on-surface-variant);
 }
 
 .hh-chart__label {

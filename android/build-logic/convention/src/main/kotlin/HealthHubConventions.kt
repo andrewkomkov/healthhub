@@ -64,7 +64,14 @@ internal fun Project.configureCompose(extension: LibraryExtension) {
         // Here rather than per feature: an icon is design-system vocabulary, and a module having
         // to declare a dependency to draw a back arrow is how screens end up with a text button
         // where a navigation icon belongs.
+        //
+        // The extended set as well as the core one, because the core set is a back arrow, a
+        // search glass and about twenty others — it has no heart, no stopwatch, no mountain, and
+        // those are the alphabet a workout is written in. It is a large artefact and every icon
+        // is its own class, so R8 keeps only the ones actually referenced; the debug build pays
+        // for the whole set, and the release build does not.
         add("implementation", libs.findLibrary("compose-material-icons-core").get())
+        add("implementation", libs.findLibrary("compose-material-icons").get())
         add("implementation", libs.findLibrary("compose-ui-tooling-preview").get())
         add("debugImplementation", libs.findLibrary("compose-ui-tooling").get())
     }

@@ -12,7 +12,8 @@
  * the library's own jsDelivr URLs are used, pinned by the package version so the binary always
  * matches the JS that drives it.
  *
- * The same shape as `VITE_MAP_TILES_URL`: a deployment detail the code refuses to invent.
+ * The same shape as `VITE_MAP_TILES_URL`: a deployment detail with a working default behind it,
+ * overridable by anyone who would rather serve it themselves.
  */
 
 export interface DuckDbBundle {

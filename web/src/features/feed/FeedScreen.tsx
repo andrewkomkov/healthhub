@@ -1,14 +1,23 @@
 import { type FeedActivity, type User } from '../../core/api/client'
-import { distance, duration, elevation, localDate, paceOrSpeed, sportLabel } from '../../core/format'
+import {
+  distance,
+  duration,
+  elevation,
+  localDate,
+  paceOrSpeed,
+  sportLabel,
+} from '../../core/format'
 import { useActivityPages } from '../../core/paging'
+import { Icon, type IconName } from '../../core/m3e/Icon'
 import { RouteThumbnail } from './RouteThumbnail'
 
-function Stat({ label, value }: { label: string; value: string }) {
+/** A figure with its icon. No chip container: a feed of them would be a wall of outlines. */
+function Metric({ icon, value }: { icon: IconName; value: string }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <span className="t-label-medium">{label}</span>
-      <span className="t-title-medium numeric">{value}</span>
-    </div>
+    <span className="hh-metric">
+      <Icon name={icon} />
+      <span className="t-label-large numeric">{value}</span>
+    </span>
   )
 }
 
@@ -37,42 +46,43 @@ function ActivityCard({
     >
       {activity.routePolyline && <RouteThumbnail polyline={activity.routePolyline} />}
 
-      <div
-        style={{
-          padding: 'var(--hh-space-lg)',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 'var(--hh-space-md)',
-        }}
-      >
-        <header style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="t-label-medium">
-            {sportLabel(activity.sport)} · {localDate(activity.startTime, activity.tzOffsetMinutes)}
+      {/* The card leads with the figure, not the label. Five columns of "Distance / Time / Pace"
+          with the values underneath gave every number the same weight and made the card a small
+          table; an athlete scrolling a month of walks reads the distance and the date, and reads
+          the rest only when one of them looks unusual. Same hierarchy as the phone's card. */}
+      <div className="hh-feed-card">
+        <header className="hh-feed-card__head">
+          <span className="t-title-large-emphasized numeric">
+            {distance(activity.distanceM, units)}
           </span>
-          <h2 className="t-title-large">{activity.title}</h2>
+          <span className="t-label-medium hh-feed-card__when">
+            {localDate(activity.startTime, activity.tzOffsetMinutes)}
+          </span>
+          {activity.hasGps && (
+            <span className="hh-feed-card__mark" title="Has a route">
+              <Icon name="map" />
+            </span>
+          )}
         </header>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(84px, 1fr))',
-            gap: 'var(--hh-space-lg)',
-          }}
-        >
-          <Stat label="Distance" value={distance(activity.distanceM, units)} />
-          <Stat
-            label="Time"
+        {/* Health Connect writes no title of its own, so the sport is stored as one and the line
+            read "Walking · Walking". The title is only worth its own words when somebody — the
+            athlete, or the app that recorded it — actually wrote one. */}
+        <p className="t-body-medium hh-feed-card__title">
+          {activity.title.toLowerCase() === activity.sport.toLowerCase()
+            ? sportLabel(activity.sport)
+            : `${sportLabel(activity.sport)} · ${activity.title}`}
+        </p>
+
+        <div className="hh-metrics">
+          <Metric
+            icon="timer"
             value={duration(activity.movingSeconds ?? activity.elapsedSeconds)}
           />
-          <Stat
-            label="Pace"
-            value={paceOrSpeed(activity.avgSpeedMps, activity.sport, units)}
-          />
-          {activity.elevationGainM !== null && (
-            <Stat label="Elevation" value={elevation(activity.elevationGainM, units)} />
-          )}
-          {activity.avgHrBpm !== null && (
-            <Stat label="Avg HR" value={`${activity.avgHrBpm} bpm`} />
+          <Metric icon="speed" value={paceOrSpeed(activity.avgSpeedMps, activity.sport, units)} />
+          {activity.avgHrBpm !== null && <Metric icon="heart" value={`${activity.avgHrBpm} bpm`} />}
+          {activity.elevationGainM !== null && activity.elevationGainM >= 1 && (
+            <Metric icon="terrain" value={`+${elevation(activity.elevationGainM, units)}`} />
           )}
         </div>
       </div>
@@ -146,8 +156,8 @@ export function FeedScreen({
           <div className="m3-empty">
             <h2 className="t-title-large">No activities yet</h2>
             <p className="t-body-medium">
-              Install the HealthHub app on your Android phone, sign in with this account, and
-              grant it access to Health Connect. Your workouts will appear here.
+              Install the HealthHub app on your Android phone, sign in with this account, and grant
+              it access to Health Connect. Your workouts will appear here.
             </p>
           </div>
         )}
