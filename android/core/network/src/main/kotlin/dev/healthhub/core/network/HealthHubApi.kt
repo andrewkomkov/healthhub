@@ -75,6 +75,33 @@ class HealthHubApi @Inject constructor(
     suspend fun me(): UserDto = get("/api/auth/me").decode<UserEnvelope>().user
 
     /**
+     * Changes an account-level preference.
+     *
+     * The unit system is account-level rather than device-level on purpose: the browser renders
+     * the same ride, and two clients disagreeing about whether it was 41.2 km or 25.6 mi is the
+     * failure SC-008 names. A `null` field is left alone rather than cleared.
+     */
+    suspend fun patchMe(displayName: String? = null, unitSystem: String? = null): UserDto =
+        patch("/api/auth/me", PatchUserRequest(displayName, unitSystem))
+            .decode<UserEnvelope>().user
+
+    /**
+     * Revokes this installation's device token, server-side.
+     *
+     * Best-effort by convention of its caller: a sign-out that cannot reach the network still
+     * has to clear the credential from the phone, because the phone is where the athlete is
+     * standing. What the server keeps is a row they can revoke from the browser.
+     */
+    suspend fun revokeDevice(deviceId: String) {
+        delete("/api/devices/$deviceId").close()
+    }
+
+    /** Ends the browser-style session. The device token is revoked separately. */
+    suspend fun logout() {
+        post("/api/auth/logout", EmptyBody).close()
+    }
+
+    /**
      * Exchanges the current session for a long-lived device token.
      *
      * The token comes back exactly once — only its hash is stored server-side — so it is
@@ -109,6 +136,19 @@ class HealthHubApi @Inject constructor(
             .build()
         execute(request).close()
     }
+
+    /**
+     * Names the workouts the athlete deleted at the source (FR-007).
+     *
+     * By `sourceUid`, which is the Health Connect record id — the change log reports a deleted
+     * *record*, and that is the identifier the activity was ingested under, so no lookup is
+     * needed on either side. The server soft-deletes: the row stops representing the athlete
+     * everywhere and nothing is destroyed, so re-adding the record brings the workout back on
+     * the next sync.
+     */
+    suspend fun reportDeleted(sourceUids: List<String>): Int =
+        post("/api/activities/deleted", DeletedActivitiesRequest(sourceUids))
+            .decode<DeletedActivitiesResponse>().deleted
 
     suspend fun feed(cursor: String? = null, limit: Int = 30): FeedResponse {
         val url = "$baseUrl/api/activities".toHttpUrl().newBuilder()
@@ -176,8 +216,19 @@ class HealthHubApi @Inject constructor(
             .build(),
     )
 
+    private suspend inline fun <reified T> patch(path: String, body: T): Response = execute(
+        Request.Builder()
+            .url("$baseUrl$path")
+            .patch(json.encodeToString(body).toRequestBody(jsonMedia))
+            .authorize()
+            .build(),
+    )
+
     private suspend fun get(path: String): Response =
         execute(Request.Builder().url("$baseUrl$path").get().authorize().build())
+
+    private suspend fun delete(path: String): Response =
+        execute(Request.Builder().url("$baseUrl$path").delete().authorize().build())
 
     private fun Request.Builder.authorize(): Request.Builder = apply {
         tokens.deviceToken()?.let { header("authorization", "Bearer $it") }

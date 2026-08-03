@@ -226,6 +226,14 @@ class SyncEngine @Inject constructor(
             recordCursor(to)
         }
 
+        // Workouts the athlete removed at the source (FR-007). Runs after the uploads so that
+        // a deletion and a re-upload of the same record in one pass cannot race — the upload
+        // clears `deleted_at`, and doing it the other way round would resurrect the workout.
+        val removed = runCatching { propagateDeletions() }.getOrElse { error ->
+            failures += SyncFailure("deletions", error.message ?: error::class.simpleName.orEmpty())
+            0
+        }
+
         // Only once everything today is uploaded, and only when nothing failed: a quota spent on
         // history is a quota the next sync does not have, and there is no point repairing last
         // March while this morning's ride is still stuck.
@@ -260,11 +268,23 @@ class SyncEngine @Inject constructor(
             // Said out loud rather than left to be noticed on a map days later. A backfill that
             // found nothing says nothing — this line appears only when a workout that had no
             // track now has one.
-            message = backfill?.takeIf { it.imported > 0 }?.let {
-                val more = if (it.more) " More to come on the next sync." else ""
-                val tracks = if (it.imported == 1) "track" else "tracks"
-                "Filled in ${it.imported} GPS $tracks for older workouts.$more"
-            },
+            // Said out loud rather than left to be noticed. Two sentences at most, and each
+            // only when it has something to report — a sync that filled nothing in and removed
+            // nothing says nothing at all, which is the common case.
+            message = listOfNotNull(
+                backfill?.takeIf { it.imported > 0 }?.let {
+                    val more = if (it.more) " More to come on the next sync." else ""
+                    val tracks = if (it.imported == 1) "track" else "tracks"
+                    "Filled in ${it.imported} GPS $tracks for older workouts.$more"
+                },
+                // A workout leaving the feed without a word would look like data loss, which
+                // is the one thing this product must never appear to do — even when it is the
+                // athlete's own deletion coming back to them from Health Connect.
+                removed.takeIf { it > 0 }?.let {
+                    val workouts = if (it == 1) "workout" else "workouts"
+                    "Removed $it $workouts you deleted in Health Connect."
+                },
+            ).joinToString(" ").ifEmpty { null },
         )
 
         runCatching { api.postReport(report.toRequest()) }
@@ -418,6 +438,16 @@ class SyncEngine @Inject constructor(
         val distanceM = distance.distanceM
         val distanceIsTheTrack = distance.origin == Metrics.DistanceOrigin.GPS
 
+        /*
+         * Computed once and used twice — for the stored figure and for the average speed
+         * derived from it — so the two cannot drift apart. A channel that never crosses the
+         * moving threshold leaves this *unknown* rather than zero: reporting 0 is what once
+         * made real workouts read "0:00" in the feed.
+         */
+        val movingSecondsValue = speed
+            ?.let { Metrics.movingSeconds(time, it) }
+            ?.takeIf { it > 0 }
+
         val elevationChange = elevation?.let { Metrics.elevationChange(it) }
         val simplified = if (lat != null && lon != null) Route.simplify(lat, lon) else emptyList()
 
@@ -459,19 +489,19 @@ class SyncEngine @Inject constructor(
             // Zero is not a measurement here: a session whose speed channel never crosses the
             // moving threshold has *unknown* moving time, not none, and reporting 0 makes the
             // feed show "0:00" for a real workout.
-            movingSeconds = speed
-                ?.let { Metrics.movingSeconds(time, it).toLong() }
-                ?.takeIf { it > 0 },
+            movingSeconds = movingSecondsValue?.toLong(),
             distanceM = distanceM,
             elevationGainM = elevationChange?.gainM ?: recordedElevationGainM,
             elevationLossM = elevationChange?.lossM,
             caloriesKcal = recordedCaloriesKcal,
-            avgSpeedMps = speed?.let { Metrics.mean(it) }
-                // Without a speed channel, average speed still follows from distance over
-                // moving time — which is what the feed card shows as pace.
-                ?: distanceM?.let { metres ->
-                    if (elapsedSeconds > 0) metres / elapsedSeconds else null
-                },
+            // Distance over moving time, never the mean of the speed channel — see
+            // `Metrics.averageSpeed` for the walk that made the difference visible.
+            avgSpeedMps = Metrics.averageSpeed(
+                distanceM = distanceM,
+                movingSeconds = movingSecondsValue,
+                elapsedSeconds = elapsedSeconds.toDouble(),
+                channelMeanMps = speed?.let { Metrics.mean(it) },
+            ),
             maxSpeedMps = speed?.let { Metrics.max(it) },
             avgHrBpm = heartRate?.let { Metrics.mean(it)?.toInt() },
             maxHrBpm = heartRate?.let { Metrics.max(it)?.toInt() },
@@ -801,6 +831,61 @@ class SyncEngine @Inject constructor(
         }
     }
 
+    /**
+     * Tells the server about workouts the athlete deleted in Health Connect (FR-007).
+     *
+     * Absence cannot be read. `readRecords` returns what exists, so a range query can never
+     * report that something has gone — the platform's change log is the only thing that can,
+     * and it answers "what changed since this token" rather than "what is missing". Three
+     * consequences, all of them visible to the athlete, so all of them worth stating:
+     *
+     * - **the first sync propagates nothing.** There is no token yet, so this pass takes one
+     *   and reports zero. Deletions flow from the second sync onwards. Taking the token at the
+     *   *end* of the first sync rather than the start is deliberate: a workout deleted while
+     *   that sync was running would otherwise fall in the gap between the two;
+     * - **an expired token is a gap, not a deletion.** Health Connect drops a token after about
+     *   a month, and a phone that has been off that long simply cannot know what happened. It
+     *   takes a fresh one and reports nothing. Inventing deletions out of a gap would remove
+     *   workouts nobody deleted, which is the one failure this product must not have;
+     * - **it is a soft delete on the server.** The row stops representing the athlete
+     *   everywhere; nothing is destroyed, and re-adding the record in Health Connect brings it
+     *   back on the next sync, because the upsert clears `deleted_at`.
+     */
+    private suspend fun propagateDeletions(): Int {
+        val stored = staging.state(CHANGES_KEY)?.changeToken
+
+        if (stored == null) {
+            rememberChangesToken(healthConnect.changesToken())
+            return 0
+        }
+
+        val deletions = healthConnect.deletionsSince(stored)
+
+        if (deletions.recordIds.isNotEmpty()) {
+            // The token advances only once the server has accepted the list. A failure here
+            // throws, the token stays where it was, and the next sync reports the same
+            // deletions again — which is safe, because the route is idempotent.
+            api.reportDeleted(deletions.recordIds)
+        }
+        rememberChangesToken(deletions.token)
+
+        if (deletions.expired) {
+            Log.i(TAG, "Change token had expired; took a fresh one and propagated nothing")
+        }
+        return deletions.recordIds.size
+    }
+
+    private suspend fun rememberChangesToken(token: String) {
+        staging.putState(
+            SyncStateEntity(
+                recordType = CHANGES_KEY,
+                changeToken = token,
+                syncedUntil = null,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
     private suspend fun lastSyncedUntil(): Instant? =
         staging.state(CURSOR_KEY)?.syncedUntil?.let(Instant::ofEpochMilli)
 
@@ -873,6 +958,13 @@ class SyncEngine @Inject constructor(
         const val MIN_ROUTE_POINTS = 2
 
         const val CURSOR_KEY = "ExerciseSession"
+
+        /**
+         * Where the change-log cursor is kept. A separate row from [CURSOR_KEY] because the two
+         * answer different questions — "how far forward have I read" and "what has changed
+         * since I last looked" — and they advance on different conditions.
+         */
+        const val CHANGES_KEY = "ExerciseSession:changes"
         const val PREVIEW_POINTS = 2_000
 
         /**

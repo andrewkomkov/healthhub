@@ -21,6 +21,30 @@ data class UserDto(
 data class UserEnvelope(val user: UserDto)
 
 /**
+ * A partial update to the account.
+ *
+ * `explicitNulls = false` on the shared `Json` is what makes this work: a field left null is
+ * omitted from the body entirely, and the Worker leaves the stored value alone rather than
+ * writing a null over it — so changing units cannot silently clear a display name.
+ */
+@Serializable
+data class PatchUserRequest(
+    val displayName: String? = null,
+    val unitSystem: String? = null,
+)
+
+/** For the handful of endpoints that take an empty JSON body rather than none. */
+@Serializable
+data object EmptyBody
+
+/** Health Connect record ids whose workouts the athlete deleted at the source (FR-007). */
+@Serializable
+data class DeletedActivitiesRequest(val sourceUids: List<String>)
+
+@Serializable
+data class DeletedActivitiesResponse(val deleted: Int = 0)
+
+/**
  * What a client-side KDF produced from the password (R-006 amendment).
  *
  * `scheme` names the algorithm and its parameters; `value` is 32 base64-encoded bytes. The

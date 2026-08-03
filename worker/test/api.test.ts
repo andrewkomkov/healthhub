@@ -375,6 +375,61 @@ describe('activities', () => {
     expect(activities[0]).toHaveProperty('sourceUid', 'hc-route-match')
   })
 
+  it('soft-deletes the workouts the athlete removed in Health Connect', async () => {
+    // FR-007. The phone names them by `sourceUid` because that is what the platform's change
+    // log reports — a deleted *record* — and it is the identifier the activity was ingested
+    // under, so neither side has to look anything up.
+    await json('/api/activities', sampleActivity('hc-gone'), { headers: auth })
+    await json('/api/activities', sampleActivity('hc-stays'), { headers: auth })
+
+    const before = await request('/api/activities', { headers: { cookie } })
+    expect(((await before.json()) as { activities: unknown[] }).activities).toHaveLength(2)
+
+    const removed = await json(
+      '/api/activities/deleted',
+      { sourceUids: ['hc-gone'] },
+      { headers: auth },
+    )
+    expect(removed.status).toBe(200)
+    expect((await removed.json()) as { deleted: number }).toEqual({ deleted: 1 })
+
+    // Gone from every view, not merely from the feed: `deleted_at` is what all of them filter
+    // on, which is exactly why the deletion is one stamp rather than a rule per screen.
+    const after = await request('/api/activities?view=all', { headers: { cookie } })
+    const { activities } = (await after.json()) as { activities: { sourceUid: string }[] }
+    expect(activities).toHaveLength(1)
+    expect(activities[0]!.sourceUid).toBe('hc-stays')
+  })
+
+  it('reports zero the second time it is told about the same deletion', async () => {
+    // A phone that syncs the same change-log page twice sends the same ids twice. The route
+    // has to be idempotent or a retry would look like it removed something it did not.
+    await json('/api/activities', sampleActivity('hc-twice'), { headers: auth })
+
+    const first = await json('/api/activities/deleted', { sourceUids: ['hc-twice'] }, { headers: auth })
+    const second = await json('/api/activities/deleted', { sourceUids: ['hc-twice'] }, { headers: auth })
+
+    expect((await first.json()) as { deleted: number }).toEqual({ deleted: 1 })
+    expect((await second.json()) as { deleted: number }).toEqual({ deleted: 0 })
+  })
+
+  it('brings a workout back when its record is re-added at the source', async () => {
+    // The upsert clears `deleted_at`, so re-adding the recording in Health Connect restores it
+    // on the next sync. That is what makes the deletion honest rather than destructive: the
+    // row was never thrown away, it stopped representing the athlete.
+    await json('/api/activities', sampleActivity('hc-return'), { headers: auth })
+    await json('/api/activities/deleted', { sourceUids: ['hc-return'] }, { headers: auth })
+
+    const gone = await request('/api/activities', { headers: { cookie } })
+    expect(((await gone.json()) as { activities: unknown[] }).activities).toHaveLength(0)
+
+    await json('/api/activities', sampleActivity('hc-return'), { headers: auth })
+    const back = await request('/api/activities', { headers: { cookie } })
+    const { activities } = (await back.json()) as { activities: { sourceUid: string }[] }
+    expect(activities).toHaveLength(1)
+    expect(activities[0]!.sourceUid).toBe('hc-return')
+  })
+
   it('is idempotent on the source id', async () => {
     const first = await json('/api/activities', sampleActivity('hc-repeat'), { headers: auth })
     const second = await json('/api/activities', sampleActivity('hc-repeat'), { headers: auth })
@@ -400,6 +455,40 @@ describe('activities', () => {
 
     const all = await request('/api/activities?view=all', { headers: { cookie } })
     expect(((await all.json()) as { activities: unknown[] }).activities).toHaveLength(2)
+  })
+
+  it('says on the detail response which recording an archived one lost to', async () => {
+    // The client cannot act on an archived recording without this. Offering "restore" or
+    // "import a route" on one whose duplicate is still in the feed either resurrects a
+    // recording the athlete set aside or refuses an import that was always safe — and the
+    // phone has no other way to tell the two situations apart. Null for anything active,
+    // which is why both halves are asserted.
+    await json('/api/activities', sampleActivity('hc-dup-primary'), { headers: auth })
+    const secondary = await json(
+      '/api/activities',
+      sampleActivity('hc-dup-secondary', { duplicateOf: 'hc-dup-primary', sourceCount: 2 }),
+      { headers: auth },
+    )
+    const { activity } = (await secondary.json()) as { activity: { id: string } }
+
+    const detail = await request(`/api/activities/${activity.id}`, { headers: { cookie } })
+    const body = (await detail.json()) as {
+      activity: { duplicateOf: string | null; visibility: string; visibilityLocked: boolean }
+    }
+    expect(body.activity.duplicateOf).toBe('hc-dup-primary')
+    expect(body.activity.visibility).toBe('archived')
+    // Not locked: this verdict was the sync's, and a later sync may reverse it. Only a
+    // decision the athlete made by hand sets the lock.
+    expect(body.activity.visibilityLocked).toBe(false)
+
+    const primaryFeed = await request('/api/activities', { headers: { cookie } })
+    const { activities } = (await primaryFeed.json()) as { activities: { id: string }[] }
+    const primary = await request(`/api/activities/${activities[0]!.id}`, { headers: { cookie } })
+    const primaryBody = (await primary.json()) as {
+      activity: { duplicateOf: string | null; visibility: string }
+    }
+    expect(primaryBody.activity.duplicateOf).toBeNull()
+    expect(primaryBody.activity.visibility).toBe('active')
   })
 
   it('pages with a stable keyset cursor', async () => {

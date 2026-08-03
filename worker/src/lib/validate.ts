@@ -81,6 +81,32 @@ export function arr(body: Json, key: string, max = 10_000): unknown[] {
   return value
 }
 
+/**
+ * An array of non-empty strings, deduplicated.
+ *
+ * Deduplicating here rather than at the call site because the callers are all binding these
+ * into an `IN (...)` clause, where a repeat is a wasted placeholder and — with `max` bounding
+ * the statement — a repeat that pushes a real value out of the batch.
+ */
+export function strArray(
+  body: Json,
+  key: string,
+  opts: { max?: number; maxLength?: number } = {},
+): string[] {
+  const max = opts.max ?? 1000
+  const maxLength = opts.maxLength ?? 200
+  const values = arr(body, key, max)
+
+  const out = new Set<string>()
+  for (const value of values) {
+    if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) {
+      fail('validation_failed', `"${key}" must hold non-empty strings of at most ${maxLength}.`)
+    }
+    out.add(value)
+  }
+  return [...out]
+}
+
 export function oneOf<T extends string>(
   body: Json,
   key: string,

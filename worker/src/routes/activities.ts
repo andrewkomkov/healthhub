@@ -16,6 +16,7 @@ import {
   optionalNum,
   optionalStr,
   str,
+  strArray,
 } from '../lib/validate'
 
 const FEED_COLUMNS = `id, source_uid, sport, title, start_time, tz_offset_minutes,
@@ -208,6 +209,45 @@ export const activityRoutes = new Hono<AppEnv>()
     )
   })
 
+  /**
+   * Workouts the athlete deleted in Health Connect (FR-007).
+   *
+   * Named by `sourceUid` rather than by activity id, because that is what the phone has: the
+   * platform's change log reports a deleted *record*, and the record id is what an activity was
+   * ingested under. Requiring the device to look each one up first would be a round trip per
+   * deletion for no gain.
+   *
+   * A **soft** delete, and the distinction is the whole design of this product's storage. There
+   * are two different things a person can mean:
+   *
+   * - *archived* — a duplicate recording the sync demoted. Nothing was thrown away, the athlete
+   *   can see it in the archive and restore it, and this route has nothing to do with it;
+   * - *deleted* — the athlete removed the recording at its source. That is an instruction, not
+   *   a verdict, so the row stops representing them everywhere. `deleted_at` is what every read
+   *   path already filters on, so one stamp removes it from the feed, the archive, the detail
+   *   route and the analytical export at once.
+   *
+   * Idempotent: a device that syncs the same change log page twice reports the same ids twice,
+   * and `deleted_at IS NULL` means the second pass changes nothing and answers zero.
+   */
+  .post('/deleted', requireDevice, async (c) => {
+    const userId = c.get('principal').userId
+    const body = await jsonBody(c.req.raw)
+    const uids = strArray(body, 'sourceUids', { max: 500 })
+    if (uids.length === 0) return c.json({ deleted: 0 })
+
+    const now = Date.now()
+    const placeholders = uids.map(() => '?').join(', ')
+    const result = await c.env.DB.prepare(
+      `UPDATE activities SET deleted_at = ?, updated_at = ?
+       WHERE user_id = ? AND deleted_at IS NULL AND source_uid IN (${placeholders})`,
+    )
+      .bind(now, now, userId, ...uids)
+      .run()
+
+    return c.json({ deleted: result.meta.changes ?? 0 })
+  })
+
   /** The feed query (FR-010, FR-013, FR-015). One indexed read; no R2 access. */
   .get('/', async (c) => {
     const userId = c.get('principal').userId
@@ -296,6 +336,16 @@ export const activityRoutes = new Hono<AppEnv>()
         // picks an arbitrary one of the pair, so an athlete importing a route on one activity
         // watched the track attach to its duplicate. This is the identifier that disambiguates.
         sourceUid: row['source_uid'],
+        /*
+         * Which recording this one was archived in favour of, when it was.
+         *
+         * On the detail response only, and for one reason: a client offering "restore" or
+         * "import a route" on an archived recording has to know whether it is a duplicate of
+         * something still in the feed. Re-uploading it without knowing carries the duplicate
+         * verdict along, which either resurrects a recording the athlete set aside or refuses
+         * an import that was perfectly safe. Null for everything the feed shows.
+         */
+        duplicateOf: row['duplicate_of'] ?? null,
         endTime: row['end_time'],
         elevationLossM: row['elevation_loss_m'],
         caloriesKcal: row['calories_kcal'],

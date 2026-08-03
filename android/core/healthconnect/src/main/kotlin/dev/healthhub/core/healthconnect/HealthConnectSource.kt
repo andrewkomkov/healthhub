@@ -23,6 +23,8 @@ import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.changes.DeletionChange
+import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -118,6 +120,58 @@ class HealthConnectSource @Inject constructor(
     fun permissionRequestContract() = PermissionController.createRequestPermissionResultContract()
 
     /** Reads every workout session in the window, oldest first. */
+    /* ------------------------------------------------------------------------- deletions */
+
+    /**
+     * What a recording that has gone away looks like to this app.
+     *
+     * [recordIds] are Health Connect record ids, which is what an activity's `sourceUid` is —
+     * so the caller can name the workouts to remove without a second lookup.
+     *
+     * [token] is the cursor to store for next time. [expired] says the stored one was too old
+     * to use, which Health Connect does after roughly a month: the honest response is to take
+     * a fresh token and report nothing, because a gap in the change log is a gap, and inventing
+     * deletions from it would remove workouts nobody deleted.
+     */
+    data class Deletions(
+        val recordIds: List<String>,
+        val token: String,
+        val expired: Boolean,
+    )
+
+    /**
+     * A cursor into the change log, for the record types this app stores.
+     *
+     * There is no way to ask "what is gone" — only "what has changed since this token", and a
+     * token that does not exist yet cannot answer for the past. So the first sync takes a token
+     * and reports nothing, and deletions are propagated from the second sync onwards. That is
+     * the platform's shape, not a shortcut: `readRecords` returns what exists, and absence is
+     * not something a range query can report.
+     */
+    suspend fun changesToken(): String =
+        client.getChangesToken(ChangesTokenRequest(recordTypes = setOf(ExerciseSessionRecord::class)))
+
+    /** Everything the change log has to say since [token], deletions only. */
+    suspend fun deletionsSince(token: String): Deletions {
+        val removed = mutableListOf<String>()
+        var cursor = token
+
+        // The log is paged, and a phone that has not synced for a fortnight has several pages
+        // of them. Draining it here rather than leaving a tail for next time is what stops a
+        // deletion sitting unpropagated behind an upsertion-heavy page.
+        while (true) {
+            val response = client.getChanges(cursor)
+            if (response.changesTokenExpired) {
+                return Deletions(emptyList(), changesToken(), expired = true)
+            }
+            response.changes.filterIsInstance<DeletionChange>().mapTo(removed) { it.recordId }
+            cursor = response.nextChangesToken
+            if (!response.hasMore) break
+        }
+
+        return Deletions(removed, cursor, expired = false)
+    }
+
     suspend fun readSessions(from: Instant, to: Instant): List<ExerciseSessionRecord> =
         readAll(ExerciseSessionRecord::class, from, to)
 
