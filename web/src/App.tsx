@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { api, type User } from './core/api/client'
+import { AppShell } from './core/m3e/AppShell'
+import { detectLocale, LocaleContext } from './core/i18n'
 import { applyDynamicTheme } from './core/m3e/dynamicTheme'
 import { AuthScreen } from './features/auth/AuthScreen'
 
@@ -83,6 +85,10 @@ function Lazily({ children }: { children: ReactNode }) {
 }
 
 export function App() {
+  // Read once, from the browser. There is deliberately no in-app language switch: the phone
+  // has none either — it follows the system — and a second place to set a language is a second
+  // place for the two clients to disagree about which one an athlete chose.
+  const [locale] = useState(detectLocale)
   const [user, setUser] = useState<User | null>(null)
   const [checking, setChecking] = useState(true)
   const [route, setRoute] = useState<Route>(routeFromLocation)
@@ -120,54 +126,79 @@ export function App() {
     setRoute(next)
   }
 
-  if (checking) return <Loading />
+  if (checking) {
+    return (
+      <LocaleContext.Provider value={locale}>
+        <Loading />
+      </LocaleContext.Provider>
+    )
+  }
 
-  if (!user) return <AuthScreen onSignedIn={setUser} />
+  if (!user) {
+    return (
+      <LocaleContext.Provider value={locale}>
+        <AuthScreen onSignedIn={setUser} />
+      </LocaleContext.Provider>
+    )
+  }
 
   const toFeed = () => navigate({ name: 'feed' })
 
-  switch (route.name) {
-    case 'activity':
-      return (
-        <Lazily>
-          <ActivityScreen id={route.id} user={user} onBack={toFeed} />
-        </Lazily>
-      )
-    case 'archive':
-      return (
-        <Lazily>
-          <ArchiveScreen
-            user={user}
-            onBack={toFeed}
+  // Null on anything below the top level, which is what tells the shell to draw no navigation:
+  // an activity has its own way back, and four sideways moves over it are chrome.
+  const shellDestination = route.name === 'activity' ? null : route.name
+
+  return (
+    <LocaleContext.Provider value={locale}>
+      <AppShell
+        current={shellDestination}
+        onNavigate={(id) => navigate({ name: id } as Route)}
+      >
+        {screenFor()}
+      </AppShell>
+    </LocaleContext.Provider>
+  )
+
+  function screenFor() {
+    switch (route.name) {
+      case 'activity':
+        return (
+          <Lazily>
+            <ActivityScreen id={route.id} user={user!} onBack={toFeed} />
+          </Lazily>
+        )
+      case 'archive':
+        return (
+          <Lazily>
+            <ArchiveScreen
+              user={user!}
+              onOpenActivity={(id) => navigate({ name: 'activity', id })}
+            />
+          </Lazily>
+        )
+      case 'sources':
+        return (
+          <Lazily>
+            <SourcesScreen user={user!} />
+          </Lazily>
+        )
+      case 'health':
+        return (
+          <Lazily>
+            <HealthScreen user={user!} />
+          </Lazily>
+        )
+      default:
+        return (
+          <FeedScreen
+            user={user!}
             onOpenActivity={(id) => navigate({ name: 'activity', id })}
+            onSignOut={async () => {
+              await api.logout().catch(() => undefined)
+              setUser(null)
+            }}
           />
-        </Lazily>
-      )
-    case 'sources':
-      return (
-        <Lazily>
-          <SourcesScreen user={user} onBack={toFeed} />
-        </Lazily>
-      )
-    case 'health':
-      return (
-        <Lazily>
-          <HealthScreen user={user} onBack={toFeed} />
-        </Lazily>
-      )
-    default:
-      return (
-        <FeedScreen
-          user={user}
-          onOpenActivity={(id) => navigate({ name: 'activity', id })}
-          onOpenArchive={() => navigate({ name: 'archive' })}
-          onOpenSources={() => navigate({ name: 'sources' })}
-          onOpenHealth={() => navigate({ name: 'health' })}
-          onSignOut={async () => {
-            await api.logout().catch(() => undefined)
-            setUser(null)
-          }}
-        />
-      )
+        )
+    }
   }
 }

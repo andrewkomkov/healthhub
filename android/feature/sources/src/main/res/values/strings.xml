@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sources_menu">Sources</string>
+    <string name="archive_menu">Archive</string>
+    <string name="action_restore">Restore to the feed</string>
+    <string name="action_set_aside">Set aside as a duplicate</string>
+    <string name="set_aside_title">Set this recording aside?</string>
+    <string name="set_aside_body">It leaves the feed and moves to the archive, where it is kept and can be restored at any time. The decision is yours, so it outranks anything a later sync concludes — a re-sync will not put it back.</string>
+    <string name="set_aside_confirm">Set aside</string>
+    <string name="restored">Restored to the feed.</string>
+    <string name="restored_locked">Restored to the feed. Later syncs will leave it there.</string>
+    <string name="archived">Moved to the archive.</string>
+    <string name="archived_locked">Moved to the archive. Later syncs will leave it there.</string>
+    <string name="sources_title">Sources</string>
+    <string name="sources_note_title">Whose numbers do you believe?</string>
+    <string name="sources_note_body">When several apps record the same workout, the one highest in this list represents it in your feed. A source you turn off is still ingested — its recordings go to the archive.</string>
+    <string name="sources_hint">Press and hold a handle to drag a source, or use its move buttons.</string>
+    <string name="sources_empty_title">No sources yet</string>
+    <string name="sources_empty_body">Apps appear here once your phone has seen them writing to Health Connect. Run a sync and come back.</string>
+    <string name="sources_saving">Saving…</string>
+    <string name="sources_saved">Saved. The next sync will apply it.</string>
+    <string name="sources_idle">Your phone applies this order the next time it syncs.</string>
+    <string name="sources_failed">That change did not reach the server, so the list below is what is stored.</string>
+    <string name="sources_considered">Considered when choosing</string>
+    <string name="sources_ignored">Ignored when choosing</string>
+    <string name="sources_move_up">Move up</string>
+    <string name="sources_move_down">Move down</string>
+    <string name="sources_unknown_app">Unknown app</string>
+    <string name="sources_activity_count">%1$d activities</string>
+    <string name="archive_title">Archive</string>
+    <string name="archive_note_title">Nothing here was thrown away</string>
+    <string name="archive_empty_title">Your archive is empty</string>
+    <string name="archive_empty_body">Every workout you have is representing itself in the feed. Recordings set aside as duplicates would wait here with everything they measured.</string>
+    <string name="archive_error_title">Could not load your archive</string>
+    <string name="archive_restore">Restore to feed</string>
+    <string name="archive_restoring">Restoring…</string>
+    <string name="archive_undo">Undo</string>
+    <string name="archive_set_aside">Set aside</string>
+    <string name="archive_failed">That did not reach the server. Your archive is unchanged — try again.</string>
+    <string name="archive_end">That is everything currently set aside.</string>
+    <string name="archive_loading">Loading…</string>
+    <string name="archive_loading_more">Loading more…</string>
+    <string name="archive_back">Back</string>
+    <string name="archive_note_body">When several apps record the same workout, the one you trust most represents it in your feed. The others wait here with everything they measured, and any of them can be restored.</string>
+</resources>

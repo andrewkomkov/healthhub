@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="sources_menu">Источники</string>
+    <string name="archive_menu">Архив</string>
+    <string name="action_restore">Вернуть в ленту</string>
+    <string name="action_set_aside">Отложить как дубликат</string>
+    <string name="set_aside_title">Отложить эту запись?</string>
+    <string name="set_aside_body">Она уходит из ленты в архив, где сохраняется и может быть возвращена в любой момент. Решение ваше, поэтому оно важнее любого вывода следующей синхронизации — повторная синхронизация её не вернёт.</string>
+    <string name="set_aside_confirm">Отложить</string>
+    <string name="restored">Возвращено в ленту.</string>
+    <string name="restored_locked">Возвращено в ленту. Следующие синхронизации это не изменят.</string>
+    <string name="archived">Перемещено в архив.</string>
+    <string name="archived_locked">Перемещено в архив. Следующие синхронизации это не изменят.</string>
+    <string name="sources_title">Источники</string>
+    <string name="sources_note_title">Чьим цифрам вы верите?</string>
+    <string name="sources_note_body">Когда одну тренировку записали несколько приложений, в ленте её представляет то, что выше в этом списке. Выключенный источник всё равно загружается — его записи уходят в архив.</string>
+    <string name="sources_hint">Нажмите и удерживайте ручку, чтобы перетащить источник, или используйте кнопки перемещения.</string>
+    <string name="sources_empty_title">Источников пока нет</string>
+    <string name="sources_empty_body">Приложения появятся здесь, когда телефон увидит, что они пишут в Health Connect. Запустите синхронизацию и возвращайтесь.</string>
+    <string name="sources_saving">Сохраняем…</string>
+    <string name="sources_saved">Сохранено. Следующая синхронизация это применит.</string>
+    <string name="sources_idle">Телефон применит этот порядок при следующей синхронизации.</string>
+    <string name="sources_failed">Изменение не дошло до сервера, поэтому ниже показано то, что сохранено.</string>
+    <string name="sources_considered">Участвует в выборе</string>
+    <string name="sources_ignored">Не участвует в выборе</string>
+    <string name="sources_move_up">Выше</string>
+    <string name="sources_move_down">Ниже</string>
+    <string name="sources_unknown_app">Неизвестное приложение</string>
+    <string name="sources_activity_count">Тренировок: %1$d</string>
+    <string name="archive_title">Архив</string>
+    <string name="archive_note_title">Отсюда ничего не выбрасывалось</string>
+    <string name="archive_empty_title">Архив пуст</string>
+    <string name="archive_empty_body">Каждая ваша тренировка сейчас представляет себя сама в ленте. Записи, отложенные как дубликаты, ждали бы здесь со всем, что они измерили.</string>
+    <string name="archive_error_title">Не удалось загрузить архив</string>
+    <string name="archive_restore">Вернуть в ленту</string>
+    <string name="archive_restoring">Возвращаем…</string>
+    <string name="archive_undo">Отменить</string>
+    <string name="archive_set_aside">Отложить</string>
+    <string name="archive_failed">Не дошло до сервера. Архив не изменился — попробуйте ещё раз.</string>
+    <string name="archive_end">Это всё, что сейчас отложено.</string>
+    <string name="archive_loading">Загружаем…</string>
+    <string name="archive_loading_more">Загружаем ещё…</string>
+    <string name="archive_back">Назад</string>
+    <string name="archive_note_body">Когда одну тренировку записали несколько приложений, в ленте её представляет то, которому вы доверяете больше. Остальные ждут здесь со всем, что они измерили, и любую можно вернуть.</string>
+</resources>

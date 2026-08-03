@@ -9,6 +9,7 @@ import { ConnectPanel } from './ConnectPanel'
 import { ResultTable } from './ResultTable'
 import './history.css'
 
+
 /**
  * Whole-history questions, answered in this tab.
  *

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">Тренировки</string>
+    <string name="feed_sync">Синхронизация</string>
+    <string name="feed_offline">Нет сети — показаны тренировки, сохранённые на телефоне.</string>
+
+    <string name="feed_empty_title">Тренировок пока нет</string>
+    <string name="feed_empty_body">Тренировки появятся здесь, как только HealthHub прочитает их из Health Connect. Выдайте доступ на экране синхронизации и запустите её.</string>
+    <string name="feed_empty_action">Открыть синхронизацию</string>
+
+    <string name="feed_error_title">Не удалось загрузить тренировки</string>
+    <string name="feed_page_error">Не удалось загрузить продолжение. %1$s</string>
+
+    <string name="feed_card_description">%1$s, %2$s. %3$s.</string>
+    <string name="feed_tab">Тренировки</string>
+</resources>

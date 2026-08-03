@@ -1,9 +1,28 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useMessages, type Bundle } from '../../core/i18n'
 import { api, type Source, type User } from '../../core/api/client'
 import { sourceLabel } from '../../core/format'
 import { SourceRow } from './SourceRow'
 import { move, orderChanged, stepTo } from './reorder'
 import './sources.css'
+
+const MESSAGES = {
+  en: {
+    title: "Sources",
+    noteTitle: "Whose numbers do you believe?",
+    moveUp: "Move up",
+    moveDown: "Move down",
+    tryAgain: "Try again",
+  },
+  ru: {
+    title: "Источники",
+    noteTitle: "Чьим цифрам вы верите?",
+    moveUp: "Выше",
+    moveDown: "Ниже",
+    tryAgain: "Повторить",
+  },
+} satisfies Bundle<Record<string, string>>
+
 
 /** Long enough that a run of arrow keys is one request, short enough to feel immediate. */
 const SAVE_DELAY_MS = 400
@@ -26,7 +45,8 @@ type SaveState = 'idle' | 'saving' | 'saved' | 'failed'
  * A disabled source is still ingested. Its recordings go to the archive and stay restorable —
  * turning an app off is a statement about whose numbers to believe, not about what to keep.
  */
-export function SourcesScreen({ onBack }: { user: User; onBack: () => void }) {
+export function SourcesScreen(_props: { user: User }) {
+  const t = useMessages(MESSAGES)
   const [sources, setSources] = useState<Source[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -229,15 +249,12 @@ export function SourcesScreen({ onBack }: { user: User; onBack: () => void }) {
   return (
     <>
       <header className="m3-app-bar">
-        <button className="m3-button m3-button--text" onClick={onBack}>
-          ← Activities
-        </button>
-        <h1 className="t-title-large">Sources</h1>
+        <h1 className="t-title-large-emphasized">{t.title}</h1>
       </header>
 
       <div className="m3-page">
         <section className="hh-sources-note" aria-label="How source priority works">
-          <h2 className="t-title-medium">Whose numbers do you believe?</h2>
+          <h2 className="t-title-medium">{t.noteTitle}</h2>
           <p className="t-body-medium">
             When several apps record the same workout, the one highest in this list represents
             it in your feed. The others wait in the archive with everything they measured, and

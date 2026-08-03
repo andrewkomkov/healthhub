@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -48,7 +49,7 @@ fun UpdatesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Updates") },
+                title = { Text(stringResource(R.string.updates_title)) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
             )
         },
@@ -63,7 +64,7 @@ fun UpdatesScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 Text(
-                    "Version ${state.currentVersion}",
+                    stringResource(R.string.updates_current, state.currentVersion),
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Text(
@@ -81,7 +82,7 @@ fun UpdatesScreen(
                         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                     ) {
                         Text(
-                            "Version ${update.version} is available",
+                            stringResource(R.string.updates_available, update.version),
                             style = MaterialTheme.typography.titleMedium,
                         )
                         update.notes?.let { notes ->
@@ -95,15 +96,13 @@ fun UpdatesScreen(
                         }
                         if (!state.installsInPlace) {
                             Text(
-                                "This is a debug build, so the released APK would install " +
-                                    "beside it rather than over it. The release page is the " +
-                                    "way in.",
+                                stringResource(R.string.updates_debug_build),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else if (update.apkUrl == null) {
                             Text(
-                                "This release has no APK attached yet.",
+                                stringResource(R.string.updates_no_apk),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -112,7 +111,7 @@ fun UpdatesScreen(
                 }
             } else if (!state.checking) {
                 Text(
-                    "HealthHub is up to date.",
+                    stringResource(R.string.updates_up_to_date),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -141,9 +140,9 @@ fun UpdatesScreen(
                 ) {
                     Text(
                         if (state.installsInPlace && update.apkUrl != null) {
-                            "Install ${update.version}"
+                            stringResource(R.string.updates_install, update.version)
                         } else {
-                            "Open the release page"
+                            stringResource(R.string.updates_release_page)
                         },
                     )
                 }
@@ -154,7 +153,7 @@ fun UpdatesScreen(
                 enabled = !state.checking && state.progress == null,
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Text(if (state.checking) "Checking…" else "Check for updates")
+                Text(if (state.checking) stringResource(R.string.updates_checking) else stringResource(R.string.updates_check))
             }
 
             Row(
@@ -163,10 +162,9 @@ fun UpdatesScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Check automatically", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.updates_auto), style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "Once every twelve hours, HealthHub asks GitHub for the latest " +
-                            "release. It is the only request this app makes to anything but " +
+                        stringResource(R.string.updates_auto_body) +
                             "its own server, and it carries nothing about you.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -176,7 +174,7 @@ fun UpdatesScreen(
             }
 
             TextButton(onClick = { viewModel.openReleasePage(context) }) {
-                Text("All releases")
+                Text(stringResource(R.string.updates_all_releases))
             }
         }
     }
@@ -187,9 +185,9 @@ private fun ProgressRow(progress: UpdateProgress) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
         Text(
             when (progress.stage) {
-                UpdateProgress.Stage.DOWNLOAD -> "Downloading"
-                UpdateProgress.Stage.VERIFY -> "Checking the download"
-                UpdateProgress.Stage.INSTALL -> "Handing it to Android"
+                UpdateProgress.Stage.DOWNLOAD -> stringResource(R.string.updates_downloading)
+                UpdateProgress.Stage.VERIFY -> stringResource(R.string.updates_verifying)
+                UpdateProgress.Stage.INSTALL -> stringResource(R.string.updates_handing_over)
             },
             style = MaterialTheme.typography.bodyMedium,
         )
@@ -211,13 +209,22 @@ private fun ProgressRow(progress: UpdateProgress) {
 
 private fun megabytes(bytes: Long): String = "%.1f".format(bytes / 1024.0 / 1024.0)
 
+/**
+ * `@Composable` because it reads resources, and the relative time it builds comes from the
+ * platform — `DateUtils` already speaks the phone's language, so the only part that needed
+ * translating is the word around it.
+ */
+@Composable
 private fun lastCheckedLabel(state: UpdatesUiState): String = when {
-    state.checking -> "Checking GitHub…"
-    state.lastCheck == 0L -> "Not checked yet"
-    else -> "Checked " + DateUtils.getRelativeTimeSpanString(
-        state.lastCheck,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS,
+    state.checking -> stringResource(R.string.updates_checking_github)
+    state.lastCheck == 0L -> stringResource(R.string.updates_never_checked)
+    else -> stringResource(
+        R.string.updates_checked,
+        DateUtils.getRelativeTimeSpanString(
+            state.lastCheck,
+            System.currentTimeMillis(),
+            DateUtils.MINUTE_IN_MILLIS,
+        ).toString(),
     )
 }
 

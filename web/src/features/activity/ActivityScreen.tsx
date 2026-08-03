@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
+import { useLocale, useMessages, type Bundle } from '../../core/i18n'
 import { type User } from '../../core/api/client'
 import { TelemetryCharts, type ChartPanel } from '../../core/charts/TelemetryCharts'
 import { Icon, type IconName } from '../../core/m3e/Icon'
@@ -11,6 +12,8 @@ import {
   localDate,
   paceOrSpeed,
   sportLabel,
+  heartRate,
+  unitLabels,
 } from '../../core/format'
 import {
   cumulativeDistance,
@@ -21,17 +24,90 @@ import { SplitsTable } from './SplitsTable'
 import { ZoneDistribution } from './ZoneDistribution'
 import { useActivityTelemetry } from './useTelemetry'
 
+const MESSAGES = {
+  en: {
+    loading: "Loading…",
+    summary: "Summary",
+    telemetry: "Telemetry",
+    route: "Route",
+    chartAxis: "Chart axis",
+    axisTime: "Time",
+    axisDistance: "Distance",
+    distance: "Distance",
+    moving: "Moving",
+    elapsed: "Elapsed",
+    avgPace: "Avg pace",
+    avgSpeed: "Avg speed",
+    bestPace: "Best pace",
+    maxSpeed: "Max speed",
+    elevGain: "Elev gain",
+    avgHr: "Avg HR",
+    maxHr: "Max HR",
+    avgPower: "Avg power",
+    calories: "Calories",
+    selection: "Selection",
+    noRoute: "No route to draw",
+    noSamples: "No per-second data for this workout",
+    preview: "Preview resolution — loading full detail…",
+    channelElevation: "Elevation",
+    channelSpeed: "Speed",
+    channelPace: "Pace",
+    channelHr: "Heart rate",
+    channelCadence: "Cadence",
+    channelPower: "Power",
+  },
+  ru: {
+    loading: "Загружаем…",
+    summary: "Сводка",
+    telemetry: "Телеметрия",
+    route: "Трек",
+    chartAxis: "Ось графика",
+    axisTime: "Время",
+    axisDistance: "Дистанция",
+    distance: "Дистанция",
+    moving: "В движении",
+    elapsed: "Общее время",
+    avgPace: "Средний темп",
+    avgSpeed: "Средняя скорость",
+    bestPace: "Лучший темп",
+    maxSpeed: "Макс. скорость",
+    elevGain: "Набор высоты",
+    avgHr: "Средний пульс",
+    maxHr: "Макс. пульс",
+    avgPower: "Средняя мощность",
+    calories: "Калории",
+    selection: "Выделение",
+    noRoute: "Трек нарисовать не из чего",
+    noSamples: "У этой тренировки нет посекундных данных",
+    preview: "Предварительное разрешение — загружается полное…",
+    channelElevation: "Высота",
+    channelSpeed: "Скорость",
+    channelPace: "Темп",
+    channelHr: "Пульс",
+    channelCadence: "Каденс",
+    channelPower: "Мощность",
+  },
+} satisfies Bundle<Record<string, string>>
+
+
 /** Which channels get a panel, in the order they are stacked, and how each one reads. */
 const PANEL_ORDER = ['elevation', 'speed', 'hr', 'cadence', 'power'] as const
 
 type PanelKey = (typeof PANEL_ORDER)[number]
 
-const PANEL_LABELS: Record<PanelKey, string> = {
-  elevation: 'Elevation',
-  speed: 'Speed',
-  hr: 'Heart rate',
-  cadence: 'Cadence',
-  power: 'Power',
+/**
+ * A channel's name, as a key into the screen's own bundle rather than as a word.
+ *
+ * The map is module-level and the lookup is not — resolving it here would have frozen the
+ * language at import time, which is the same mistake as reading `Locale.getDefault()` into a
+ * `val` on the phone.
+ */
+const PANEL_LABELS: Record<PanelKey, keyof (typeof MESSAGES)['en']> = {
+  elevation: 'channelElevation',
+  speed: 'channelSpeed',
+  hr: 'channelHr',
+  cadence: 'channelCadence',
+  power: 'channelPower',
 }
 
 const SPEED_SPORTS = new Set(['cycling', 'ebiking', 'rowing', 'swimming', 'skiing', 'skating'])
@@ -74,6 +150,9 @@ export function ActivityScreen({
   user: User
   onBack: () => void
 }) {
+  const t = useMessages(MESSAGES)
+  // One lookup for the whole screen: every tile and every chart axis reads it.
+  const labels = unitLabels(useLocale())
   const { activity, telemetry, resolution, loading, error } = useActivityTelemetry(id)
   const [axis, setAxis] = useState<'time' | 'distance'>('time')
   const [cursorIndex, setCursorIndex] = useState<number | null>(null)
@@ -137,7 +216,7 @@ export function ActivityScreen({
       return [
         {
           key,
-          label: key === 'speed' && pacey ? 'Pace' : PANEL_LABELS[key],
+          label: key === 'speed' && pacey ? t.channelPace : t[PANEL_LABELS[key]],
           values,
           format: formatFor(key),
           summary: summaries[key],
@@ -192,7 +271,7 @@ export function ActivityScreen({
   if (loading) {
     return (
       <div className="m3-page">
-        <p className="t-body-medium">Loading…</p>
+        <p className="t-body-medium">{t.loading}</p>
       </div>
     )
   }
@@ -228,47 +307,47 @@ export function ActivityScreen({
           {activity.description && <p className="t-body-medium">{activity.description}</p>}
         </header>
 
-        <section className="m3-card hh-section" aria-label="Summary">
+        <section className="m3-card hh-section" aria-label={t.summary}>
           <div className="hh-stats-tiles">
-            <Tile icon="route" label="Distance" value={distance(activity.distanceM, units)} />
+            <Tile icon="route" label={t.distance} value={distance(activity.distanceM, units, labels)} />
             <Tile
               icon="timer"
-              label="Moving"
+              label={t.moving}
               value={duration(activity.movingSeconds ?? activity.elapsedSeconds)}
             />
-            <Tile icon="schedule" label="Elapsed" value={duration(activity.elapsedSeconds)} />
+            <Tile icon="schedule" label={t.elapsed} value={duration(activity.elapsedSeconds)} />
             <Tile
               icon="speed"
-              label={pacey ? 'Avg pace' : 'Avg speed'}
+              label={pacey ? t.avgPace : t.avgSpeed}
               value={paceOrSpeed(activity.avgSpeedMps, sport, units)}
             />
             {activity.maxSpeedMps !== null && (
               <Tile
                 icon="bolt"
-                label={pacey ? 'Best pace' : 'Max speed'}
+                label={pacey ? t.bestPace : t.maxSpeed}
                 value={paceOrSpeed(activity.maxSpeedMps, sport, units)}
               />
             )}
             {activity.elevationGainM !== null && (
               <Tile
                 icon="terrain"
-                label="Elev gain"
+                label={t.elevGain}
                 value={elevation(activity.elevationGainM, units)}
               />
             )}
             {activity.avgHrBpm !== null && (
-              <Tile icon="heart" label="Avg HR" value={`${activity.avgHrBpm} bpm`} />
+              <Tile icon="heart" label={t.avgHr} value={heartRate(activity.avgHrBpm, labels)} />
             )}
             {activity.maxHrBpm !== null && (
-              <Tile icon="pulse" label="Max HR" value={`${activity.maxHrBpm} bpm`} />
+              <Tile icon="pulse" label={t.maxHr} value={heartRate(activity.maxHrBpm, labels)} />
             )}
             {activity.avgPowerW !== null && (
-              <Tile icon="bolt" label="Avg power" value={`${Math.round(activity.avgPowerW)} W`} />
+              <Tile icon="bolt" label={t.avgPower} value={`${Math.round(activity.avgPowerW)} ${labels.watts}`} />
             )}
             {activity.caloriesKcal !== null && (
               <Tile
                 icon="flame"
-                label="Calories"
+                label={t.calories}
                 value={`${Math.round(activity.caloriesKcal)} kcal`}
               />
             )}
@@ -283,8 +362,8 @@ export function ActivityScreen({
             cursorIndex={cursorIndex}
           />
         ) : (
-          <section className="m3-empty" aria-label="Route">
-            <h2 className="t-title-medium">No route to draw</h2>
+          <section className="m3-empty" aria-label={t.route}>
+            <h2 className="t-title-medium">{t.noRoute}</h2>
             <p className="t-body-medium">
               {/* Three different situations, and telling them apart is the whole point of this
                   card. A recording whose track is a single fix used to render nothing at all —
@@ -300,9 +379,9 @@ export function ActivityScreen({
         )}
 
         {panels.length > 0 && xValues ? (
-          <section className="m3-card hh-section" aria-label="Telemetry">
+          <section className="m3-card hh-section" aria-label={t.telemetry}>
             <div className="hh-section__bar">
-              <div className="hh-chips" role="group" aria-label="Chart axis">
+              <div className="hh-chips" role="group" aria-label={t.chartAxis}>
                 <button
                   className={`hh-chip${activeAxis === 'time' ? ' hh-chip--selected' : ''}`}
                   aria-pressed={activeAxis === 'time'}
@@ -320,7 +399,7 @@ export function ActivityScreen({
                 </button>
               </div>
               {resolution === 'preview' && (
-                <span className="t-body-small">Preview resolution — loading full detail…</span>
+                <span className="t-body-small">{t.preview}</span>
               )}
             </div>
 
@@ -336,25 +415,25 @@ export function ActivityScreen({
             {selectionStats ? (
               <div className="hh-selection">
                 <div className="hh-section__bar">
-                  <h3 className="t-title-medium">Selection</h3>
+                  <h3 className="t-title-medium">{t.selection}</h3>
                   <button className="m3-button m3-button--text" onClick={() => setSelection(null)}>
                     Clear
                   </button>
                 </div>
                 <div className="hh-stats-grid">
-                  <Stat label="Distance" value={distance(selectionStats.distanceM, units)} />
-                  <Stat label="Elapsed" value={duration(selectionStats.elapsedSeconds)} />
-                  <Stat label="Moving" value={duration(selectionStats.movingSeconds)} />
+                  <Stat label={t.distance} value={distance(selectionStats.distanceM, units, labels)} />
+                  <Stat label={t.elapsed} value={duration(selectionStats.elapsedSeconds)} />
+                  <Stat label={t.moving} value={duration(selectionStats.movingSeconds)} />
                   <Stat
-                    label={pacey ? 'Avg pace' : 'Avg speed'}
+                    label={pacey ? t.avgPace : t.avgSpeed}
                     value={paceOrSpeed(selectionStats.avgSpeedMps, sport, units)}
                   />
                   <Stat
-                    label="Elev gain"
+                    label={t.elevGain}
                     value={elevation(selectionStats.elevationGainM, units)}
                   />
                   <Stat
-                    label="Avg HR"
+                    label={t.avgHr}
                     value={
                       selectionStats.avgHrBpm === null
                         ? '—'
@@ -363,7 +442,7 @@ export function ActivityScreen({
                   />
                   {selectionStats.avgPowerW !== null && (
                     <Stat
-                      label="Avg power"
+                      label={t.avgPower}
                       value={`${Math.round(selectionStats.avgPowerW)} W`}
                     />
                   )}
@@ -377,8 +456,8 @@ export function ActivityScreen({
           </section>
         ) : (
           resolution === 'none' && (
-            <section className="m3-empty" aria-label="Telemetry">
-              <h2 className="t-title-medium">No per-second data for this workout</h2>
+            <section className="m3-empty" aria-label={t.telemetry}>
+              <h2 className="t-title-medium">{t.noSamples}</h2>
               <p className="t-body-medium">
                 The source recorded a summary but no samples, so there is nothing to plot. The
                 figures above are what it did report.

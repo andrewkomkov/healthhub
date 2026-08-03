@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_tab">Health</string>
+    <string name="health_title">Health</string>
+    <string name="health_sync">Sync</string>
+    <string name="health_syncing">Syncing…</string>
+    <string name="health_error_title">Could not load your health data</string>
+    <string name="hc_unavailable_title">Health Connect is not available</string>
+    <string name="hc_unavailable_body">Sleep and recovery are read from Health Connect. Data already synced from another phone still appears below.</string>
+    <string name="readiness">Readiness</string>
+    <string name="last_night">Last night</string>
+    <string name="sleep_trend">Sleep, three weeks</string>
+    <string name="latest_readings">Latest readings</string>
+    <string name="what_we_read">What HealthHub reads</string>
+    <string name="not_ingested">Not read from Health Connect</string>
+</resources>

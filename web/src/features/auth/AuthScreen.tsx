@@ -1,6 +1,37 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useMessages, type Bundle } from '../../core/i18n'
 import { api, ApiFailure, type Providers, type User } from '../../core/api/client'
 import { passwordProof } from './prehash'
+
+const MESSAGES = {
+  en: {
+    appName: 'HealthHub',
+    tagline: 'Your Health Connect data, properly.',
+    auth0: 'Continue with Auth0',
+    name: 'Name',
+    email: 'Email',
+    password: 'Password',
+    signIn: 'Sign in',
+    createAccount: 'Create account',
+    switchToSignUp: 'Create an account',
+    switchToSignIn: 'I already have an account',
+    working: 'Working…',
+  },
+  ru: {
+    appName: 'HealthHub',
+    tagline: 'Ваши данные Health Connect — как надо.',
+    auth0: 'Войти через Auth0',
+    name: 'Имя',
+    email: 'Электронная почта',
+    password: 'Пароль',
+    signIn: 'Войти',
+    createAccount: 'Создать аккаунт',
+    switchToSignUp: 'Создать аккаунт',
+    switchToSignIn: 'У меня уже есть аккаунт',
+    working: 'Работаем…',
+  },
+} satisfies Bundle<Record<string, string>>
+
 
 /**
  * The Worker cannot check this any more: it is handed a fixed-width digest, not a password.
@@ -10,6 +41,7 @@ import { passwordProof } from './prehash'
 const MIN_PASSWORD = 10
 
 export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void }) {
+  const t = useMessages(MESSAGES)
   const [providers, setProviders] = useState<Providers>({ password: true, auth0: false })
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
@@ -54,7 +86,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
   return (
     <div className="m3-page" style={{ maxWidth: 420, paddingTop: 'var(--hh-space-xxxl)' }}>
       <header style={{ display: 'flex', flexDirection: 'column', gap: 'var(--hh-space-sm)' }}>
-        <h1 className="t-headline-large">HealthHub</h1>
+        <h1 className="t-headline-large">{t.appName}</h1>
         <p className="t-body-medium" style={{ color: 'var(--md-sys-color-on-surface-variant)' }}>
           Your Health Connect data, properly.
         </p>
@@ -95,7 +127,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
       >
         {mode === 'register' && (
           <div className="m3-field">
-            <label htmlFor="displayName">Name</label>
+            <label htmlFor="displayName">{t.name}</label>
             <input
               id="displayName"
               value={displayName}
@@ -107,7 +139,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
         )}
 
         <div className="m3-field">
-          <label htmlFor="email">Email</label>
+          <label htmlFor="email">{t.email}</label>
           <input
             id="email"
             type="email"
@@ -119,7 +151,7 @@ export function AuthScreen({ onSignedIn }: { onSignedIn: (user: User) => void })
         </div>
 
         <div className="m3-field">
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">{t.password}</label>
           <input
             id="password"
             type="password"

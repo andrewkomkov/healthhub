@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="updates_menu">Updates</string>
+    <string name="updates_title">Updates</string>
+    <string name="updates_current">Version %1$s</string>
+    <string name="updates_available">Version %1$s is available</string>
+    <string name="updates_you_are_on">You are on %1$s</string>
+    <string name="updates_up_to_date">HealthHub is up to date.</string>
+    <string name="updates_check">Check for updates</string>
+    <string name="updates_checking">Checking…</string>
+    <string name="updates_checking_github">Checking GitHub…</string>
+    <string name="updates_checked">Checked %1$s</string>
+    <string name="updates_never_checked">Not checked yet</string>
+    <string name="updates_auto">Check automatically</string>
+    <string name="updates_auto_body">Once every twelve hours, HealthHub asks GitHub for the latest release. Nothing installs without you confirming it.</string>
+    <string name="updates_install">Install %1$s</string>
+    <string name="updates_downloading">Downloading</string>
+    <string name="updates_verifying">Checking the download</string>
+    <string name="updates_handing_over">Handing it to Android</string>
+    <string name="updates_all_releases">All releases</string>
+    <string name="updates_release_page">Open the release page</string>
+    <string name="updates_no_apk">This release has no APK attached yet.</string>
+    <string name="updates_debug_build">This is a debug build, so the released APK would install beside it rather than over it. The release page is the way to it.</string>
+</resources>

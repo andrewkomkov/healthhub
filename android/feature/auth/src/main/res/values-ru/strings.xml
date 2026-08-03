@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_app_name">HealthHub</string>
+    <string name="auth_tagline">Ваши данные Health Connect — как надо.</string>
+    <string name="auth_auth0">Войти через Auth0</string>
+    <string name="auth_name">Имя</string>
+    <string name="auth_email">Электронная почта</string>
+    <string name="auth_password">Пароль</string>
+    <string name="auth_password_hint">Не короче %1$d символов.</string>
+    <string name="auth_show_password">Показать пароль</string>
+    <string name="auth_hide_password">Скрыть пароль</string>
+    <string name="auth_sign_in">Войти</string>
+    <string name="auth_create_account">Создать аккаунт</string>
+    <string name="auth_switch_to_sign_up">Создать аккаунт</string>
+    <string name="auth_switch_to_sign_in">У меня уже есть аккаунт</string>
+</resources>

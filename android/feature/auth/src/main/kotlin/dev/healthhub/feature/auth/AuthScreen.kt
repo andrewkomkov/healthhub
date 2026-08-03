@@ -9,15 +9,23 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,12 +38,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.healthhub.core.designsystem.HealthHubType
 import dev.healthhub.core.designsystem.Spacing
 
 /**
@@ -56,6 +67,12 @@ fun AuthScreen(
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var displayName by rememberSaveable { mutableStateOf("") }
+    // Not `rememberSaveable`: a password revealed once should not still be revealed after a
+    // rotation, or after the app is restored from the background in front of somebody else.
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    val submit = { viewModel.submit(email.trim(), password, displayName.trim()) }
+    val canSubmit = !state.busy && email.isNotBlank() && password.isNotBlank()
 
     LaunchedEffect(state.signedIn) {
         if (state.signedIn) onSignedIn()
@@ -67,13 +84,19 @@ fun AuthScreen(
             .safeDrawingPadding()
             .verticalScroll(rememberScrollState())
             .padding(Spacing.xl),
-        verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+        // A form stretched across a tablet is a row of very wide text fields with the label at
+        // one end and the cursor at the other. Capped and centred, it reads the same everywhere.
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+      Column(
+        modifier = Modifier.fillMaxWidth().widthIn(max = FORM_MAX_WIDTH),
+        verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+      ) {
         Spacer(Modifier.height(Spacing.xxl))
 
-        Text("HealthHub", style = MaterialTheme.typography.headlineLarge)
+        Text(stringResource(R.string.auth_app_name), style = HealthHubType.headlineLargeEmphasized)
         Text(
-            "Your Health Connect data, properly.",
+            stringResource(R.string.auth_tagline),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -91,7 +114,7 @@ fun AuthScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = !state.busy,
         ) {
-            Text("Continue with Auth0")
+            Text(stringResource(R.string.auth_auth0))
         }
 
         HorizontalDivider()
@@ -100,7 +123,7 @@ fun AuthScreen(
             OutlinedTextField(
                 value = displayName,
                 onValueChange = { displayName = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.auth_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -109,7 +132,7 @@ fun AuthScreen(
         OutlinedTextField(
             value = email,
             onValueChange = { email = it },
-            label = { Text("Email") },
+            label = { Text(stringResource(R.string.auth_email)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Email,
@@ -121,15 +144,33 @@ fun AuthScreen(
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Password") },
+            label = { Text(stringResource(R.string.auth_password)) },
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
+            visualTransformation =
+                if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            // A reveal toggle rather than dots and hope. A password typed blind on a phone
+            // keyboard is the single most common reason a correct password is reported wrong,
+            // and this app's own error message for that case is "incorrect email or password".
+            trailingIcon = {
+                IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        if (passwordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        contentDescription = stringResource(
+                            if (passwordVisible) R.string.auth_hide_password
+                            else R.string.auth_show_password,
+                        ),
+                    )
+                }
+            },
             keyboardOptions = KeyboardOptions(
                 keyboardType = KeyboardType.Password,
                 imeAction = ImeAction.Done,
             ),
+            // The keyboard's own Done key submits. Reaching past it for a button is a step
+            // nobody should have to take on the app's first screen.
+            keyboardActions = KeyboardActions(onDone = { if (canSubmit) submit() }),
             supportingText = if (state.mode == AuthUiState.Mode.SIGN_UP) {
-                { Text("At least $MIN_PASSWORD characters.") }
+                { Text(stringResource(R.string.auth_password_hint, MIN_PASSWORD)) }
             } else {
                 null
             },
@@ -137,16 +178,26 @@ fun AuthScreen(
         )
 
         state.error?.let { message ->
-            Text(
-                message,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+            // In the error container rather than as red text on the page. Red text beside two
+            // fields reads as "one of these is wrong"; a container says the attempt failed,
+            // which is what actually happened.
+            Surface(
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    message,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(Spacing.md),
+                )
+            }
         }
 
         Button(
-            onClick = { viewModel.submit(email.trim(), password, displayName.trim()) },
-            enabled = !state.busy && email.isNotBlank() && password.isNotBlank(),
+            onClick = submit,
+            enabled = canSubmit,
             modifier = Modifier.fillMaxWidth(),
         ) {
             if (state.busy) {
@@ -157,7 +208,13 @@ fun AuthScreen(
                 )
             } else {
                 Text(
-                    if (state.mode == AuthUiState.Mode.SIGN_IN) "Sign in" else "Create account",
+                    stringResource(
+                        if (state.mode == AuthUiState.Mode.SIGN_IN) {
+                            R.string.auth_sign_in
+                        } else {
+                            R.string.auth_create_account
+                        },
+                    ),
                 )
             }
         }
@@ -167,15 +224,21 @@ fun AuthScreen(
             modifier = Modifier.align(Alignment.CenterHorizontally),
         ) {
             Text(
-                if (state.mode == AuthUiState.Mode.SIGN_IN) {
-                    "Create an account"
-                } else {
-                    "I already have an account"
-                },
+                stringResource(
+                    if (state.mode == AuthUiState.Mode.SIGN_IN) {
+                        R.string.auth_switch_to_sign_up
+                    } else {
+                        R.string.auth_switch_to_sign_in
+                    },
+                ),
             )
         }
+      }
     }
 }
+
+/** Wide enough to type in, narrow enough that the label and the cursor stay in one glance. */
+private val FORM_MAX_WIDTH = 480.dp
 
 /**
  * The deployment address, supplied by the app module.

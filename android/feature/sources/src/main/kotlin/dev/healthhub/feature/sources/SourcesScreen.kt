@@ -29,6 +29,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -42,6 +43,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.network.SourceDto
+import dev.healthhub.core.ui.R as CoreR
 import kotlin.math.roundToInt
 
 /**
@@ -68,9 +70,17 @@ internal fun SourcesScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Sources") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
-                actions = { TextButton(onClick = onOpenArchive) { Text("Archive") } },
+                title = { Text(stringResource(R.string.sources_title)) },
+                navigationIcon = {
+                    TextButton(onClick = onBack) {
+                        Text(stringResource(R.string.archive_back))
+                    }
+                },
+                actions = {
+                    TextButton(onClick = onOpenArchive) {
+                        Text(stringResource(R.string.archive_title))
+                    }
+                },
             )
         },
     ) { padding ->
@@ -84,19 +94,17 @@ internal fun SourcesScreen(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 Text(
-                    "Whose numbers do you believe?",
+                    stringResource(R.string.sources_note_title),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(
-                    "When several apps record the same workout, the one highest in this list " +
-                        "represents it in your feed. The others wait in the archive with " +
-                        "everything they measured, and you can restore any of them for a single " +
+                    stringResource(R.string.sources_note_body) +
                         "workout at any time.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "Press and hold a handle to drag a source, or use its move buttons.",
+                    stringResource(R.string.sources_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -108,20 +116,21 @@ internal fun SourcesScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
-                TextButton(onClick = viewModel::load) { Text("Try again") }
+                TextButton(onClick = viewModel::load) {
+                    Text(stringResource(CoreR.string.action_try_again))
+                }
             }
 
             if (state.save == SaveState.FAILED) {
                 Text(
-                    "That change did not reach the server, so the list below is what is " +
-                        "actually stored. Try again.",
+                    stringResource(R.string.sources_failed),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
             }
 
             when {
-                state.loading -> Text("Loading…", style = MaterialTheme.typography.bodyMedium)
+                state.loading -> Text(stringResource(R.string.archive_loading), style = MaterialTheme.typography.bodyMedium)
 
                 state.sources.isNotEmpty() -> SourceList(
                     sources = state.sources,
@@ -135,10 +144,9 @@ internal fun SourcesScreen(
                 state.loadError == null -> Column(
                     verticalArrangement = Arrangement.spacedBy(Spacing.sm),
                 ) {
-                    Text("No sources yet", style = MaterialTheme.typography.titleLarge)
+                    Text(stringResource(R.string.sources_empty_title), style = MaterialTheme.typography.titleLarge)
                     Text(
-                        "Apps appear here once your phone has seen them writing to Health " +
-                            "Connect. Run a sync and come back.",
+                        stringResource(R.string.sources_empty_body),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -150,10 +158,10 @@ internal fun SourcesScreen(
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
                 Text(
                     when (state.save) {
-                        SaveState.SAVING -> "Saving…"
-                        SaveState.SAVED -> "Saved. The next sync will apply it."
+                        SaveState.SAVING -> stringResource(R.string.sources_saving)
+                        SaveState.SAVED -> stringResource(R.string.sources_saved)
                         SaveState.FAILED -> ""
-                        SaveState.IDLE -> "Your phone applies this order the next time it syncs."
+                        SaveState.IDLE -> stringResource(R.string.sources_idle)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -344,13 +352,17 @@ private fun SourceRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    if (source.enabled) "Considered when choosing" else "Ignored when choosing",
+                    if (source.enabled) stringResource(R.string.sources_considered) else stringResource(R.string.sources_ignored),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                TextButton(onClick = onMoveUp, enabled = index > 0) { Text("Move up") }
-                TextButton(onClick = onMoveDown, enabled = index < total - 1) { Text("Move down") }
+                TextButton(onClick = onMoveUp, enabled = index > 0) {
+                    Text(stringResource(R.string.sources_move_up))
+                }
+                TextButton(onClick = onMoveDown, enabled = index < total - 1) {
+                    Text(stringResource(R.string.sources_move_down))
+                }
             }
         }
     }

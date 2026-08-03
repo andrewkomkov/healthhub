@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="feed_title">Activities</string>
+    <string name="feed_sync">Sync</string>
+    <string name="feed_offline">Offline — showing the workouts saved on this phone.</string>
+
+    <string name="feed_empty_title">No activities yet</string>
+    <string name="feed_empty_body">Workouts appear here once HealthHub has read them from Health Connect. Grant access on the sync screen, then run a sync.</string>
+    <string name="feed_empty_action">Open sync</string>
+
+    <string name="feed_error_title">Could not load your activities</string>
+    <string name="feed_page_error">Could not load more. %1$s</string>
+
+    <!--
+      The card is announced as one phrase rather than as six stops, so this is the whole of what
+      a screen reader says about a workout before the athlete decides to open it.
+    -->
+    <string name="feed_card_description">%1$s, %2$s. %3$s.</string>
+    <string name="feed_tab">Activities</string>
+</resources>

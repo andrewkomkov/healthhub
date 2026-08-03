@@ -30,14 +30,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.healthhub.core.designsystem.ExpressiveShapes
+import dev.healthhub.core.designsystem.HealthHubProgressBar
 import dev.healthhub.core.designsystem.HealthHubType
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.healthconnect.HealthConnectSource
+import dev.healthhub.core.ui.R as CoreR
 import dev.healthhub.core.healthconnect.HealthDomain
 
 /**
@@ -53,7 +56,6 @@ import dev.healthhub.core.healthconnect.HealthDomain
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun HealthScreen(
-    onBack: () -> Unit,
     viewModel: HealthViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -98,13 +100,26 @@ internal fun HealthScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Health") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                // No navigation icon: Health is one of the navigation bar's own destinations,
+                // and a back arrow on a tab points at whichever screen happened to precede it.
+                // The bar is the way between top-level screens; back leaves the app.
+                title = {
+                    Text(
+                        stringResource(R.string.health_title),
+                        style = HealthHubType.titleLargeEmphasized,
+                    )
+                },
                 actions = {
                     TextButton(
                         onClick = viewModel::syncAndReload,
                         enabled = !state.syncing,
-                    ) { Text(if (state.syncing) "Syncing…" else "Sync") }
+                    ) {
+                        Text(
+                            stringResource(
+                                if (state.syncing) R.string.health_syncing else R.string.health_sync,
+                            ),
+                        )
+                    }
                 },
             )
         },
@@ -115,15 +130,17 @@ internal fun HealthScreen(
             verticalArrangement = Arrangement.spacedBy(Spacing.lg),
         ) {
             if (state.loading || state.syncing) {
-                item { LinearProgressIndicator(modifier = Modifier.fillMaxWidth()) }
+                // The wavy indicator, which keeps moving while the fraction does not: a sleep
+                // sync over a year of nights is slow enough that a static bar reads as a hang.
+                item { HealthHubProgressBar(modifier = Modifier.fillMaxWidth()) }
             }
 
             state.error?.let { message ->
                 item {
                     Notice(
-                        title = "Could not load your health data",
+                        title = stringResource(R.string.health_error_title),
                         body = message,
-                        action = "Try again" to viewModel::load,
+                        action = stringResource(CoreR.string.action_try_again) to viewModel::load,
                     )
                 }
             }
@@ -131,9 +148,8 @@ internal fun HealthScreen(
             if (state.availability != HealthConnectSource.Availability.AVAILABLE) {
                 item {
                     Notice(
-                        title = "Health Connect is not available",
-                        body = "Sleep and recovery are read from Health Connect. Data already " +
-                            "synced from another phone still appears below.",
+                        title = stringResource(R.string.hc_unavailable_title),
+                        body = stringResource(R.string.hc_unavailable_body),
                     )
                 }
             }

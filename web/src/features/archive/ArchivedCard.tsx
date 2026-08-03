@@ -1,4 +1,5 @@
 import { api, type FeedActivity, type User } from '../../core/api/client'
+import { useMessages, type Bundle } from '../../core/i18n'
 import {
   distance,
   duration,
@@ -9,6 +10,18 @@ import {
   sportLabel,
 } from '../../core/format'
 import { alsoRecordedBy, archivedBecause, lockNote } from './labels'
+
+const MESSAGES = {
+  en: {
+    restore: "Restore to feed",
+    restoring: "Restoring…",
+  },
+  ru: {
+    restore: "Вернуть в ленту",
+    restoring: "Возвращаем…",
+  },
+} satisfies Bundle<Record<string, string>>
+
 
 export type CardState = 'idle' | 'working' | 'restored' | 'failed'
 
@@ -41,6 +54,7 @@ export function ArchivedCard({
   onOpen: (id: string) => void
   onStateChange: (id: string, state: CardState) => void
 }) {
+  const t = useMessages(MESSAGES)
   const restored = state === 'restored'
   const busy = state === 'working'
   const alsoBy = alsoRecordedBy(activity.sourceCount)
@@ -114,7 +128,7 @@ export function ArchivedCard({
             disabled={busy}
             onClick={() => void setVisibility('active')}
           >
-            {busy ? 'Restoring…' : 'Restore to feed'}
+            {busy ? t.restoring : t.restore}
           </button>
         )}
       </div>

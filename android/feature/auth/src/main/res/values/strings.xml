@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="auth_app_name">HealthHub</string>
+    <string name="auth_tagline">Your Health Connect data, properly.</string>
+    <string name="auth_auth0">Continue with Auth0</string>
+    <string name="auth_name">Name</string>
+    <string name="auth_email">Email</string>
+    <string name="auth_password">Password</string>
+    <string name="auth_password_hint">At least %1$d characters.</string>
+    <string name="auth_show_password">Show password</string>
+    <string name="auth_hide_password">Hide password</string>
+    <string name="auth_sign_in">Sign in</string>
+    <string name="auth_create_account">Create account</string>
+    <string name="auth_switch_to_sign_up">Create an account</string>
+    <string name="auth_switch_to_sign_in">I already have an account</string>
+</resources>

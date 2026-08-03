@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="health_tab">Здоровье</string>
+    <string name="health_title">Здоровье</string>
+    <string name="health_sync">Синхронизировать</string>
+    <string name="health_syncing">Синхронизируем…</string>
+    <string name="health_error_title">Не удалось загрузить данные о здоровье</string>
+    <string name="hc_unavailable_title">Health Connect недоступен</string>
+    <string name="hc_unavailable_body">Сон и восстановление читаются из Health Connect. Данные, синхронизированные с другого телефона, всё равно показаны ниже.</string>
+    <string name="readiness">Готовность</string>
+    <string name="last_night">Прошлая ночь</string>
+    <string name="sleep_trend">Сон за три недели</string>
+    <string name="latest_readings">Последние измерения</string>
+    <string name="what_we_read">Что читает HealthHub</string>
+    <string name="not_ingested">Не читается из Health Connect</string>
+</resources>

@@ -1,6 +1,21 @@
 import type { KeyboardEvent } from 'react'
+import { interpolate, useMessages, type Bundle } from '../../core/i18n'
 import type { Source } from '../../core/api/client'
 import { sourceLabel } from '../../core/format'
+
+const MESSAGES = {
+  en: {
+    lifted: "%1$s lifted, %2$s. Arrow keys move it, space drops it, escape cancels.",
+    reorder: "Reorder %1$s, %2$s. Press space to lift it.",
+    consider: "Use %1$s when choosing which recording represents a workout",
+  },
+  ru: {
+    lifted: "%1$s поднят, %2$s. Стрелки перемещают, пробел ставит, escape отменяет.",
+    reorder: "Переставить %1$s, %2$s. Нажмите пробел, чтобы поднять.",
+    consider: "Учитывать %1$s при выборе записи, представляющей тренировку",
+  },
+} satisfies Bundle<Record<string, string>>
+
 
 function countLabel(count: number): string {
   return count === 1 ? '1 activity' : `${count} activities`
@@ -40,6 +55,7 @@ export function SourceRow({
   onDragEnd: () => void
   draggable: boolean
 }) {
+  const t = useMessages(MESSAGES)
   const name = sourceLabel(source.packageName, source.label)
   const position = `position ${index + 1} of ${total}`
 
@@ -67,8 +83,8 @@ export function SourceRow({
         aria-pressed={grabbed}
         aria-label={
           grabbed
-            ? `${name} lifted, ${position}. Arrow keys move it, space drops it, escape cancels.`
-            : `Reorder ${name}, ${position}. Press space to lift it.`
+            ? interpolate(t.lifted, name, position)
+            : interpolate(t.reorder, name, position)
         }
         onKeyDown={(event) => onHandleKeyDown(event, index)}
         onPointerDown={() => onLiftStart(index)}
@@ -94,7 +110,7 @@ export function SourceRow({
           role="switch"
           className="hh-switch"
           aria-checked={source.enabled}
-          aria-label={`Use ${name} when choosing which recording represents a workout`}
+          aria-label={interpolate(t.consider, name)}
           onClick={() => onToggle(index)}
         />
       </span>

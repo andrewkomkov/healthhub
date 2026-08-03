@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.healthhub.core.designsystem.Spacing
@@ -67,7 +68,7 @@ fun UpdateBanner(
                         style = MaterialTheme.typography.titleSmall,
                     )
                     Text(
-                        "You are on ${state.currentVersion}",
+                        stringResource(R.string.updates_you_are_on, state.currentVersion),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }

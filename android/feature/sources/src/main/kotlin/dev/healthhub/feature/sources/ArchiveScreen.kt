@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +40,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.model.UnitSystem
+import dev.healthhub.core.ui.Format
+import dev.healthhub.core.ui.UnitLabels
+import dev.healthhub.core.ui.unitLabels
+import dev.healthhub.core.ui.R as CoreR
 
 /**
  * The recordings a higher-priority source displaced.
@@ -80,7 +85,7 @@ internal fun ArchiveScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Archive") },
+                title = { Text(stringResource(R.string.archive_title)) },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
             )
         },
@@ -130,11 +135,9 @@ internal fun ArchiveScreen(
 @Composable
 private fun ArchiveIntro() {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
-        Text("Nothing here was thrown away", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.archive_note_title), style = MaterialTheme.typography.titleMedium)
         Text(
-            "When several apps record the same workout, the one you trust most represents it " +
-                "in your feed and the rest wait here with everything they measured. Restore " +
-                "any of them and that choice outranks every later sync.",
+            stringResource(R.string.archive_note_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -149,12 +152,11 @@ private fun EmptyArchive(message: String?, onRetry: () -> Unit, modifier: Modifi
         verticalArrangement = Arrangement.spacedBy(Spacing.sm),
     ) {
         Text(
-            if (message == null) "Your archive is empty" else "Could not load your archive",
+            if (message == null) stringResource(R.string.archive_empty_title) else stringResource(R.string.archive_error_title),
             style = MaterialTheme.typography.titleLarge,
         )
         Text(
-            message ?: "Every workout you have is representing itself in the feed. Recordings " +
-                "appear here when two apps report the same session, or when you set one aside " +
+            message ?: stringResource(R.string.archive_empty_body) +
                 "by hand.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -162,7 +164,7 @@ private fun EmptyArchive(message: String?, onRetry: () -> Unit, modifier: Modifi
         )
         // An empty archive and an archive that would not load look identical otherwise, and one
         // of those two says nothing was set aside when something was.
-        if (message != null) TextButton(onClick = onRetry) { Text("Try again") }
+        if (message != null) TextButton(onClick = onRetry) { Text(stringResource(CoreR.string.action_try_again)) }
     }
 }
 
@@ -181,8 +183,8 @@ private fun ArchiveFooter(error: String?, exhausted: Boolean, onRetry: () -> Uni
         Text(
             when {
                 error != null -> "$error Everything already listed is still set aside, intact."
-                exhausted -> "That is everything currently set aside."
-                else -> "Loading more…"
+                exhausted -> stringResource(R.string.archive_end)
+                else -> stringResource(R.string.archive_loading_more)
             },
             style = MaterialTheme.typography.bodySmall,
             color = if (error != null) {
@@ -191,7 +193,7 @@ private fun ArchiveFooter(error: String?, exhausted: Boolean, onRetry: () -> Uni
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
-        if (error != null) TextButton(onClick = onRetry) { Text("Try again") }
+        if (error != null) TextButton(onClick = onRetry) { Text(stringResource(CoreR.string.action_try_again)) }
     }
 }
 
@@ -212,6 +214,7 @@ private fun ArchivedCard(
     onRestore: () -> Unit,
     onSetAside: () -> Unit,
 ) {
+    val labels = unitLabels()
     val restored = cardState == CardState.RESTORED
     val busy = cardState == CardState.WORKING
     val alsoBy = Labels.alsoRecordedBy(activity.sourceCount)
@@ -265,24 +268,27 @@ private fun ArchivedCard(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
                 verticalArrangement = Arrangement.spacedBy(Spacing.md),
             ) {
-                Stat("Distance", Format.distance(activity.distanceM, units))
+                Stat(stringResource(CoreR.string.metric_distance), Format.distance(activity.distanceM, units, labels))
                 Stat(
-                    "Time",
+                    stringResource(CoreR.string.metric_moving),
                     Format.duration(
                         activity.movingSeconds?.takeIf { it > 0 } ?: activity.elapsedSeconds,
                     ),
                 )
                 Stat(
-                    if (Format.usesSpeed(activity.sport)) "Avg speed" else "Avg pace",
-                    Format.paceOrSpeed(activity.avgSpeedMps, activity.sport, units),
+                    if (Format.usesSpeed(activity.sport)) stringResource(CoreR.string.metric_avg_speed) else stringResource(CoreR.string.metric_avg_pace),
+                    Format.paceOrSpeed(activity.avgSpeedMps, activity.sport, units, labels),
                 )
-                activity.elevationGainM?.let { Stat("Elevation", Format.elevation(it, units)) }
-                activity.avgHrBpm?.let { Stat("Avg HR", "$it bpm") }
+                activity.elevationGainM?.let { Stat(stringResource(CoreR.string.metric_elevation_gain), Format.elevation(it, units, labels)) }
+                activity.avgHrBpm?.let { Stat(
+                        stringResource(CoreR.string.metric_avg_hr),
+                        Format.heartRate(it.toDouble(), labels),
+                    ) }
             }
 
             if (cardState == CardState.FAILED) {
                 Text(
-                    "That did not reach the server. Your archive is unchanged — try again.",
+                    stringResource(R.string.archive_failed),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -295,7 +301,7 @@ private fun ArchivedCard(
             ) {
                 Text(
                     if (restored) {
-                        "Back in your feed. Later syncs will leave it there."
+                        stringResource(R.string.restored_locked)
                     } else {
                         lock ?: "Waiting here with everything it measured."
                     },
@@ -308,7 +314,7 @@ private fun ArchivedCard(
                     TextButton(onClick = onSetAside, enabled = !busy) { Text("Undo") }
                 } else {
                     Button(onClick = onRestore, enabled = !busy) {
-                        Text(if (busy) "Restoring…" else "Restore to feed")
+                        Text(if (busy) stringResource(R.string.archive_restoring) else stringResource(R.string.archive_restore))
                     }
                 }
             }

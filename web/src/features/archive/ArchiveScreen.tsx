@@ -1,8 +1,25 @@
 import { useCallback, useState } from 'react'
+import { useMessages, type Bundle } from '../../core/i18n'
 import { type User } from '../../core/api/client'
 import { useActivityPages } from '../../core/paging'
 import { ArchivedCard, type CardState } from './ArchivedCard'
 import './archive.css'
+
+const MESSAGES = {
+  en: {
+    title: "Archive",
+    noteTitle: "Nothing here was thrown away",
+    restore: "Restore to feed",
+    tryAgain: "Try again",
+  },
+  ru: {
+    title: "Архив",
+    noteTitle: "Отсюда ничего не выбрасывалось",
+    restore: "Вернуть в ленту",
+    tryAgain: "Повторить",
+  },
+} satisfies Bundle<Record<string, string>>
+
 
 /**
  * Everything Health Connect handed over that is not currently representing its workout.
@@ -17,13 +34,12 @@ import './archive.css'
  */
 export function ArchiveScreen({
   user,
-  onBack,
   onOpenActivity,
 }: {
   user: User
-  onBack: () => void
   onOpenActivity: (id: string) => void
 }) {
+  const t = useMessages(MESSAGES)
   const [states, setStates] = useState<Record<string, CardState>>({})
   const { activities, loading, error, sentinel, retry } = useActivityPages({
     view: 'archive',
@@ -36,16 +52,15 @@ export function ArchiveScreen({
 
   return (
     <>
+      {/* No back button: this is one of the shell's own destinations now, and a back control
+          on a top-level screen points at whichever screen happened to precede it. */}
       <header className="m3-app-bar">
-        <button className="m3-button m3-button--text" onClick={onBack}>
-          ← Activities
-        </button>
-        <h1 className="t-title-large">Archive</h1>
+        <h1 className="t-title-large-emphasized">{t.title}</h1>
       </header>
 
       <div className="m3-page">
         <section className="hh-archive-note" aria-label="What the archive is">
-          <h2 className="t-title-medium">Nothing here was thrown away</h2>
+          <h2 className="t-title-medium">{t.noteTitle}</h2>
           <p className="t-body-medium">
             When several apps record the same workout, one of them represents it in your feed
             and the others wait here with everything they measured. Restore any of them and
@@ -57,7 +72,7 @@ export function ArchiveScreen({
           <div className="m3-error m3-error--actionable" role="alert">
             <p className="t-body-medium">{error}</p>
             <button className="m3-button m3-button--text" onClick={retry}>
-              Try again
+              {t.tryAgain}
             </button>
           </div>
         )}

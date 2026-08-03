@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="updates_menu">Обновления</string>
+    <string name="updates_title">Обновления</string>
+    <string name="updates_current">Версия %1$s</string>
+    <string name="updates_available">Доступна версия %1$s</string>
+    <string name="updates_you_are_on">У вас %1$s</string>
+    <string name="updates_up_to_date">HealthHub обновлён до последней версии.</string>
+    <string name="updates_check">Проверить обновления</string>
+    <string name="updates_checking">Проверяем…</string>
+    <string name="updates_checking_github">Спрашиваем GitHub…</string>
+    <string name="updates_checked">Проверено %1$s</string>
+    <string name="updates_never_checked">Ещё не проверялось</string>
+    <string name="updates_auto">Проверять автоматически</string>
+    <string name="updates_auto_body">Раз в двенадцать часов HealthHub спрашивает у GitHub последний выпуск. Ничего не устанавливается без вашего подтверждения.</string>
+    <string name="updates_install">Установить %1$s</string>
+    <string name="updates_downloading">Скачиваем</string>
+    <string name="updates_verifying">Проверяем загрузку</string>
+    <string name="updates_handing_over">Передаём Android</string>
+    <string name="updates_all_releases">Все выпуски</string>
+    <string name="updates_release_page">Открыть страницу выпуска</string>
+    <string name="updates_no_apk">К этому выпуску пока не приложен APK.</string>
+    <string name="updates_debug_build">Это отладочная сборка, поэтому выпущенный APK установился бы рядом с ней, а не поверх. Путь к нему — страница выпуска.</string>
+</resources>
