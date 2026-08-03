@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_menu">О приложении</string>
+    <string name="about_title">О HealthHub</string>
+    <string name="about_body">Аналитика уровня Strava поверх Health Connect. Все показатели считаются на этом устройстве, ничего — на сервере.</string>
+    <string name="about_back">Назад</string>
+</resources>

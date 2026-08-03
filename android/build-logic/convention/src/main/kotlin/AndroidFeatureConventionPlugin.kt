@@ -23,6 +23,11 @@ class AndroidFeatureConventionPlugin : Plugin<Project> {
             add("implementation", project(":core:designsystem"))
             add("implementation", project(":core:ui"))
             add("implementation", project(":core:navigation"))
+            // Here rather than per feature, for the same reason the design system is: the unit
+            // system decides every figure on every screen, and a feature that does not know the
+            // preference exists renders kilometres at an athlete who reads miles. That is how
+            // the feed and the detail screen it opens came to disagree.
+            add("implementation", project(":core:preferences"))
 
             add("implementation", libs.findLibrary("hilt-android").get())
             add("ksp", libs.findLibrary("hilt-compiler").get())

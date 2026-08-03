@@ -39,8 +39,8 @@ class SourcesNavContribution @Inject constructor() : NavContribution {
     // Two, because this module serves two screens worth reaching and the archive is the one an
     // athlete goes looking for after noticing a workout is missing from the feed.
     override val menuEntries = listOf(
-        MenuEntry("Sources", Destination.Sources, Icons.Rounded.Layers, order = 20),
-        MenuEntry("Archive", Destination.Archive, Icons.Rounded.Inventory2, order = 30),
+        MenuEntry(R.string.sources_menu, Destination.Sources, Icons.Rounded.Layers, order = 20),
+        MenuEntry(R.string.archive_menu, Destination.Archive, Icons.Rounded.Inventory2, order = 30),
     )
 
     override fun NavGraphBuilder.register(navigator: Navigator) {

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The shared vocabulary: the words that appear on more than one screen.
+
+  Sport names live here rather than beside a feed card because three screens render them — the
+  feed, the detail top bar and the archive — and a sport that reads "Cycling" in one place and
+  "Заезд" in another is the same class of defect as a distance that disagrees with itself.
+
+  A sport is looked up by its slug through `HealthHubIcons`'s neighbour `sportName`, and an
+  unlisted slug falls back to the slug itself rather than to nothing: Principle VI says a type
+  the app cannot name is still a type it must not hide.
+-->
+<resources>
+    <string name="em_dash">—</string>
+
+    <string name="sport_running">Running</string>
+    <string name="sport_trail_running">Trail running</string>
+    <string name="sport_walking">Walking</string>
+    <string name="sport_hiking">Hiking</string>
+    <string name="sport_cycling">Cycling</string>
+    <string name="sport_mountain_biking">Mountain biking</string>
+    <string name="sport_ebiking">E-biking</string>
+    <string name="sport_swimming">Swimming</string>
+    <string name="sport_rowing">Rowing</string>
+    <string name="sport_skiing">Skiing</string>
+    <string name="sport_snowboarding">Snowboarding</string>
+    <string name="sport_skating">Skating</string>
+    <string name="sport_strength">Strength</string>
+    <string name="sport_yoga">Yoga</string>
+    <string name="sport_other">Other</string>
+
+    <!-- Metric names. Spoken by a screen reader for each figure, and printed on the tiles. -->
+    <string name="metric_distance">Distance</string>
+    <string name="metric_moving">Moving</string>
+    <string name="metric_moving_time">Moving time</string>
+    <string name="metric_elapsed">Elapsed</string>
+    <string name="metric_avg_pace">Avg pace</string>
+    <string name="metric_avg_speed">Avg speed</string>
+    <string name="metric_average_pace">Average pace</string>
+    <string name="metric_average_speed">Average speed</string>
+    <string name="metric_best_pace">Best pace</string>
+    <string name="metric_max_speed">Max speed</string>
+    <string name="metric_elevation_gain">Elev gain</string>
+    <string name="metric_elevation">Elevation gain</string>
+    <string name="metric_avg_hr">Avg HR</string>
+    <string name="metric_max_hr">Max HR</string>
+    <string name="metric_average_hr">Average heart rate</string>
+    <string name="metric_avg_power">Avg power</string>
+    <string name="metric_calories">Calories</string>
+
+    <string name="action_try_again">Try again</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_back">Back to activities</string>
+    <string name="action_more">More</string>
+    <string name="unit_km">km</string>
+    <string name="unit_mi">mi</string>
+    <string name="unit_kmh">km/h</string>
+    <string name="unit_mph">mph</string>
+    <string name="unit_per_km">/km</string>
+    <string name="unit_per_mi">/mi</string>
+    <string name="unit_m">m</string>
+    <string name="unit_ft">ft</string>
+    <string name="unit_bpm">bpm</string>
+    <string name="unit_w">W</string>
+    <string name="unit_rpm">rpm</string>
+    <string name="unit_kcal">kcal</string>
+</resources>

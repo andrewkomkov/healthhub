@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.compose.composable
 import androidx.navigation.navDeepLink
@@ -41,7 +42,7 @@ class AboutNavContribution @Inject constructor() : NavContribution {
     override val destination: Destination = Destination.About
 
     override val menuEntries = listOf(
-        MenuEntry("About", Destination.About, Icons.Rounded.Info, order = 90),
+        MenuEntry(R.string.about_menu, Destination.About, Icons.Rounded.Info, order = 90),
     )
 
     override fun NavGraphBuilder.register(navigator: Navigator) {
@@ -60,11 +61,10 @@ private fun AboutScreen(onBack: () -> Unit) {
         modifier = Modifier.fillMaxSize().padding(Spacing.xl),
         verticalArrangement = Arrangement.spacedBy(Spacing.md),
     ) {
-        TextButton(onClick = onBack) { Text("Back") }
-        Text("About HealthHub", style = MaterialTheme.typography.headlineSmall)
+        TextButton(onClick = onBack) { Text(stringResource(R.string.about_back)) }
+        Text(stringResource(R.string.about_title), style = MaterialTheme.typography.headlineSmall)
         Text(
-            "Strava-class analytics over Health Connect. Every metric on this device, " +
-                "nothing computed on a server.",
+            stringResource(R.string.about_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

@@ -23,7 +23,7 @@ class UpdatesNavContribution @Inject constructor() : NavContribution {
 
     // Last in the menu: it is the thing an athlete looks for once, not every day.
     override val menuEntries = listOf(
-        MenuEntry("Updates", Destination.Updates, Icons.Rounded.SystemUpdate, order = 80),
+        MenuEntry(R.string.updates_menu, Destination.Updates, Icons.Rounded.SystemUpdate, order = 80),
     )
 
     override fun NavGraphBuilder.register(navigator: Navigator) {

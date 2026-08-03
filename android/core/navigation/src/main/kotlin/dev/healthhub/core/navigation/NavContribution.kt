@@ -1,8 +1,10 @@
 package dev.healthhub.core.navigation
 
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 
@@ -47,14 +49,22 @@ interface NavContribution {
 }
 
 data class BottomBarEntry(
-    val label: String,
+    /**
+     * A resource id, not a string.
+     *
+     * `:app` is what draws the bar, and a module that handed it a `String` would have had to
+     * translate that string itself — at a point where it has no `Context` and no business
+     * knowing what language the phone is in. The id travels; the lookup happens where the
+     * composition is. Same reason `MenuEntry` and `ActivityAction` carry ids.
+     */
+    @StringRes val label: Int,
     val icon: ImageVector,
     /** Lower sorts earlier. Explicit so bar order does not depend on injection order. */
     val order: Int,
 )
 
 data class MenuEntry(
-    val label: String,
+    @StringRes val label: Int,
     /** Named separately from the contribution's own destination: one module can offer several. */
     val destination: Destination,
     val icon: ImageVector,
@@ -152,6 +162,18 @@ sealed interface Destination {
  */
 interface Navigator {
     fun navigate(destination: Destination)
+
+    /**
+     * Switch to one of the bar's destinations.
+     *
+     * Different from [navigate] in three ways that together are what makes a navigation bar feel
+     * like tabs rather than like a stack of screens: the back stack is popped to the graph's
+     * start rather than grown, so tapping four tabs does not cost four presses of back; each
+     * tab's own state is saved and restored, so returning to the feed returns to the scroll
+     * position it was left at; and the same tab tapped twice does not push a second copy.
+     */
+    fun navigateTopLevel(destination: Destination)
+
     fun navigateAndClearBackStack(destination: Destination)
     fun back()
 }
@@ -160,6 +182,14 @@ class NavHostNavigator(private val controller: NavHostController) : Navigator {
 
     override fun navigate(destination: Destination) {
         controller.navigate(destination.route)
+    }
+
+    override fun navigateTopLevel(destination: Destination) {
+        controller.navigate(destination.route) {
+            popUpTo(controller.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
     }
 
     override fun navigateAndClearBackStack(destination: Destination) {

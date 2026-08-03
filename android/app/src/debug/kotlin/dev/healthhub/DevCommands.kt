@@ -10,11 +10,11 @@ import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import dev.healthhub.core.designsystem.DynamicColors
 import dev.healthhub.core.devcontrol.DevCommand
-import dev.healthhub.core.database.StagingDao
 import dev.healthhub.core.devcontrol.DevReporter
 import dev.healthhub.core.healthconnect.HealthConnectSource
 import dev.healthhub.core.network.HealthHubApi
 import dev.healthhub.core.network.TokenStore
+import dev.healthhub.core.sync.AccountSession
 import dev.healthhub.core.sync.SyncEngine
 import dev.healthhub.feature.updates.UpdateRepository
 import javax.inject.Inject
@@ -69,20 +69,17 @@ class LoginCommand @Inject constructor(
     }
 }
 
-class LogoutCommand @Inject constructor(
-    private val tokens: TokenStore,
-    private val staging: StagingDao,
-) : DevCommand {
+class LogoutCommand @Inject constructor(private val session: AccountSession) : DevCommand {
     override val name = "logout"
-    override val usage = "— forget the device token, cached feed and sync position"
+    override val usage = "— sign out: revoke this device, forget the token, cache and cursor"
 
+    /**
+     * The same path the settings screen's Sign out takes, deliberately. This command used to
+     * carry its own copy — token, cursor and cache, and nothing server-side — so what an
+     * automated check exercised was not what a finger on the phone did.
+     */
     override suspend fun run(args: Map<String, String>): Map<String, String> {
-        tokens.clearAll()
-        // The sync cursor belongs to the account that was signed in. Leaving it behind makes
-        // the next account's first sync read from "now" and find nothing — which looks
-        // exactly like a broken sync button.
-        staging.clearState()
-        staging.clearCache()
+        session.signOut()
         return mapOf("cleared" to "true")
     }
 }

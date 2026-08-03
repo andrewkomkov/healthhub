@@ -11,6 +11,7 @@ dependencies {
     api(project(":core:database"))
     api(project(":core:network"))
     api(project(":core:healthconnect"))
+    api(project(":core:preferences"))
 
     implementation(libs.kotlinx.serialization.json)
     // The /api/health-records calls are made here rather than in core:network, reusing the

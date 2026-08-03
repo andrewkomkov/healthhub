@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_menu">About</string>
+    <string name="about_title">About HealthHub</string>
+    <string name="about_body">Strava-class analytics over Health Connect. Every metric on this device, nothing computed on a server.</string>
+    <string name="about_back">Back</string>
+</resources>

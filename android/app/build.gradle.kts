@@ -124,6 +124,7 @@ dependencies {
     implementation(project(":core:designsystem"))
     implementation(project(":core:ui"))
     implementation(project(":core:navigation"))
+    implementation(project(":core:preferences"))
     implementation(project(":core:network"))
     implementation(project(":core:database"))
     implementation(project(":core:healthconnect"))

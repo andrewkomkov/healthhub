@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_tab">Настройки</string>
+    <string name="settings_title">Настройки</string>
+    <string name="appearance">Оформление</string>
+    <string name="theme_system">Система</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_description">Оформление: %1$s</string>
+    <string name="theme_system_long">Как в системе</string>
+    <string name="theme_light_long">Светлая</string>
+    <string name="theme_dark_long">Тёмная</string>
+    <string name="dynamic_title">Цвета моих обоев</string>
+    <string name="dynamic_body">Material You. Эта же палитра выгружается, чтобы веб-клиент выглядел так же.</string>
+    <string name="dynamic_unsupported">Этот телефон не отдаёт палитру обоев, поэтому используется собственная палитра HealthHub.</string>
+    <string name="units_title">Единицы</string>
+    <string name="units_subtitle">Сохраняются в аккаунт, чтобы браузер показывал те же цифры.</string>
+    <string name="units_metric">Километры</string>
+    <string name="units_imperial">Мили</string>
+    <string name="units_metric_description">Единицы: километры</string>
+    <string name="units_imperial_description">Единицы: мили</string>
+    <string name="account">Аккаунт</string>
+    <string name="account_signed_in">Вы вошли</string>
+    <string name="account_not_signed_in">Вы не вошли</string>
+    <string name="account_not_signed_in_body">Ваши тренировки хранятся в аккаунте, а не на этом телефоне.</string>
+    <string name="sign_out">Выйти</string>
+    <string name="signing_out">Выходим…</string>
+    <string name="sign_in">Войти</string>
+    <string name="sign_out_title">Выйти из HealthHub?</string>
+    <string name="sign_out_body">Телефон забудет ваш аккаунт, сохранённые на нём тренировки и место, до которого дошла синхронизация. Из аккаунта ничего не пропадёт.</string>
+    <string name="more">Ещё</string>
+    <string name="units_failed">Не удалось сохранить единицы: %1$s</string>
+    <string name="no_connection">нет соединения</string>
+</resources>

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_tab">Settings</string>
+    <string name="settings_title">Settings</string>
+    <string name="appearance">Appearance</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_description">Appearance: %1$s</string>
+    <string name="theme_system_long">Follow the system</string>
+    <string name="theme_light_long">Light</string>
+    <string name="theme_dark_long">Dark</string>
+    <string name="dynamic_title">Use my wallpaper\'s colours</string>
+    <string name="dynamic_body">Material You. The same palette is uploaded so the web client can wear it too.</string>
+    <string name="dynamic_unsupported">This phone does not provide a wallpaper palette, so HealthHub\'s own is used.</string>
+    <string name="units_title">Units</string>
+    <string name="units_subtitle">Saved to your account, so the browser shows the same figures.</string>
+    <string name="units_metric">Kilometres</string>
+    <string name="units_imperial">Miles</string>
+    <string name="units_metric_description">Units: kilometres</string>
+    <string name="units_imperial_description">Units: miles</string>
+    <string name="account">Account</string>
+    <string name="account_signed_in">Signed in</string>
+    <string name="account_not_signed_in">Not signed in</string>
+    <string name="account_not_signed_in_body">Your workouts are on your account, not on this phone.</string>
+    <string name="sign_out">Sign out</string>
+    <string name="signing_out">Signing out…</string>
+    <string name="sign_in">Sign in</string>
+    <string name="sign_out_title">Sign out of HealthHub?</string>
+    <string name="sign_out_body">This phone will forget your account, the workouts saved on it, and where the sync had got to. Nothing is removed from your account.</string>
+    <string name="more">More</string>
+    <string name="units_failed">Could not save your units: %1$s</string>
+    <string name="no_connection">no connection</string>
+</resources>

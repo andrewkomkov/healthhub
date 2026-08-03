@@ -6,18 +6,37 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.core.util.Consumer
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
+import dev.healthhub.core.designsystem.HealthHubNavigationBar
+import dev.healthhub.core.designsystem.HealthHubNavigationBarItem
+import dev.healthhub.core.designsystem.HealthHubNavigationRail
+import dev.healthhub.core.designsystem.HealthHubNavigationRailItem
 import dev.healthhub.core.designsystem.HealthHubTheme
 import dev.healthhub.core.navigation.Destination
 import dev.healthhub.core.navigation.NavContribution
@@ -25,8 +44,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import dev.healthhub.core.navigation.LocalNavMenu
 import dev.healthhub.core.navigation.NavHostNavigator
 import dev.healthhub.core.network.TokenStore
+import dev.healthhub.core.preferences.AppPreferences
+import dev.healthhub.core.preferences.ThemeMode
 import dev.healthhub.feature.updates.UpdateBanner
 import javax.inject.Inject
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The only Activity.
@@ -44,6 +66,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var tokens: TokenStore
 
+    @Inject
+    lateinit var preferences: AppPreferences
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -52,7 +77,20 @@ class MainActivity : ComponentActivity() {
         consumeAuthCallback(intent)
 
         setContent {
-            HealthHubTheme {
+            // The appearance is the athlete's, read before anything is drawn. Collected rather
+            // than read once so flipping the switch on the settings screen repaints the app
+            // under the switch, which is the only way to see what the choice actually does.
+            val themeMode by preferences.themeMode.collectAsStateWithLifecycle(ThemeMode.SYSTEM)
+            val dynamicColor by preferences.dynamicColor.collectAsStateWithLifecycle(true)
+
+            HealthHubTheme(
+                darkTheme = when (themeMode) {
+                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                    ThemeMode.LIGHT -> false
+                    ThemeMode.DARK -> true
+                },
+                dynamicColor = dynamicColor,
+            ) {
                 AppRoot(
                     contributions = contributions,
                     startDestination = if (tokens.deviceToken() != null) {
@@ -60,6 +98,7 @@ class MainActivity : ComponentActivity() {
                     } else {
                         Destination.Auth
                     },
+                    isRegistered = tokens.isRegistered,
                     onAuthCallback = ::consumeAuthCallback,
                 )
             }
@@ -92,6 +131,8 @@ class MainActivity : ComponentActivity() {
 private fun AppRoot(
     contributions: Set<NavContribution>,
     startDestination: Destination,
+    /** Whether this installation still holds a usable device token. */
+    isRegistered: StateFlow<Boolean>,
     onAuthCallback: (Intent?) -> Boolean,
 ) {
     val controller = rememberNavController()
@@ -128,9 +169,104 @@ private fun AppRoot(
         contributions.flatMap { it.menuEntries }.sortedBy { it.order }
     }
 
-    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+    // The bar, from the same set the graph is built from. A feature that wants a place in it
+    // says so; nothing in this file names a screen. Before this existed the entry point was
+    // declared, documented and read by nobody — the only way to any screen but the feed was an
+    // overflow menu behind three dots, which is where an app puts the things it hopes you will
+    // not need.
+    val bar = remember(contributions) {
+        contributions
+            .mapNotNull { contribution -> contribution.bottomBarEntry?.let { it to contribution } }
+            .sortedBy { (entry, _) -> entry.order }
+            .map { (entry, contribution) -> entry to contribution.destination }
+    }
+
+    val backStackEntry by controller.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    val onTopLevel = bar.any { (_, destination) -> destination.route == currentRoute }
+
+    /*
+     * No credential, no app.
+     *
+     * The start destination alone was not enough, and a phone showed why: `healthhub://feed`
+     * opens the feed whatever the token store says, so an athlete who is not signed in — or a
+     * deep link followed before signing in — landed on a feed reporting "Sign in to continue"
+     * with a navigation bar under it and no way to sign in anywhere on the screen.
+     *
+     * The same gap catches the case that matters more, because it happens to people who did
+     * nothing wrong: a device revoked from another client answers 401, `TokenStore` clears the
+     * token, and the app would otherwise sit on a screen that can never load again.
+     */
+    val registered by isRegistered.collectAsStateWithLifecycle()
+    LaunchedEffect(registered, currentRoute) {
+        if (!registered && currentRoute != null && currentRoute != Destination.Auth.route) {
+            navigator.navigateAndClearBackStack(Destination.Auth)
+        }
+    }
+
+    /*
+     * A bar along the bottom, or a rail down the side.
+     *
+     * Decided from the window's *height*, which is the constraint that actually bites: a
+     * landscape phone is 400 dp tall, and a bottom bar plus a floating action button takes a
+     * third of it away from a scrolling list. Material answers a compact height with a rail,
+     * and the web client has made the same choice at its own breakpoint since it acquired a
+     * navigation surface at all — see `AppShell`.
+     *
+     * Read from the configuration rather than from a window-size-class dependency: this is one
+     * threshold, and the artefact that would provide it is not otherwise in the build.
+     */
+    val compactHeight = LocalConfiguration.current.screenHeightDp < COMPACT_HEIGHT_DP
+
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        bottomBar = {
+            if (compactHeight) return@Scaffold
+            // Hidden below the top level, where the screen's own back arrow is the way out and
+            // a bar offering three sideways moves is noise over content the athlete came for.
+            // Animated rather than swapped, so the detail screen does not appear to jump the
+            // height of the bar as it opens.
+            AnimatedVisibility(
+                visible = onTopLevel,
+                enter = slideInVertically { it },
+                exit = slideOutVertically { it },
+            ) {
+                HealthHubNavigationBar {
+                    bar.forEach { (entry, destination) ->
+                        HealthHubNavigationBarItem(
+                            selected = destination.route == currentRoute,
+                            onClick = { navigator.navigateTopLevel(destination) },
+                            icon = { Icon(entry.icon, contentDescription = null) },
+                            label = { Text(stringResource(entry.label)) },
+                        )
+                    }
+                }
+            }
+        },
+    ) { padding ->
         CompositionLocalProvider(LocalNavMenu provides menu) {
-            Column(modifier = Modifier.padding(padding)) {
+            Row(modifier = Modifier.padding(padding)) {
+                // The rail is inside the content rather than in a Scaffold slot, because
+                // `Scaffold` has no side slot — and it sits beside the graph rather than above
+                // it so a screen's own app bar stays at the top of its own column.
+                AnimatedVisibility(
+                    visible = compactHeight && onTopLevel,
+                    enter = slideInHorizontally { -it },
+                    exit = slideOutHorizontally { -it },
+                ) {
+                    HealthHubNavigationRail {
+                        bar.forEach { (entry, destination) ->
+                            HealthHubNavigationRailItem(
+                                selected = destination.route == currentRoute,
+                                onClick = { navigator.navigateTopLevel(destination) },
+                                icon = { Icon(entry.icon, contentDescription = null) },
+                                label = { Text(stringResource(entry.label)) },
+                            )
+                        }
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
                 // Above the graph rather than on a screen: the update is about the app, not
                 // about whatever the athlete happens to be looking at, and this is also where
                 // the quiet twelve-hourly check is started from. It occupies no height until
@@ -150,7 +286,14 @@ private fun AppRoot(
                             with(contribution) { register(navigator) }
                         }
                 }
+                }
             }
         }
     }
 }
+
+/**
+ * Below this the window is too short for a bottom bar and a floating action button to share it
+ * with a list. Material's compact-height class, which a landscape phone falls into.
+ */
+private const val COMPACT_HEIGHT_DP = 480
