@@ -158,16 +158,130 @@ unrepresentable. A feature declares its own entries (`feature:sources` declares 
 order and the archive), `:app` collects and sorts them, and `feature:feed` draws whatever it is
 handed without naming a single destination.
 
-**The registry still attaches whole screens and one menu item, nothing smaller.** `NavContribution`
-lets a module add a *route* and now a *menu entry*; there is still no equivalent for adding an
-*action to somebody else's screen*, and that gap is where session 2 step 4 stopped.
-Archive-and-restore belongs on the activity detail screen,
-but `ActivityScreen` is `internal` to `feature:activity` and has no slot a second module can put
-a button into — so the action exists in `feature:sources` (the archive screen, and the `restore`
-and `set-aside` ADB commands) while the detail screen still cannot offer it. The fix is one more
-multibinding beside `NavContribution`: a `DetailAction` set declared in `core:navigation`,
-collected by `feature:activity` and rendered in its top bar — the same shape `menuEntries` now
-has, so copy that. Do it before the next feature needs the same thing.
+**There are now three registries, and they are the whole of how a module attaches to the app.**
+All three live in `core:navigation`, all three are Hilt multibindings, and `:app` or the owning
+feature collects each one. Copy the shape rather than inventing a fourth mechanism:
+
+| Registry | Declares | Collected by |
+|---|---|---|
+| `NavContribution.destination` + `register` | a route and its screens | `:app`, into the `NavHost` |
+| `NavContribution.bottomBarEntry` | a place in the navigation bar | `:app`, into the bar |
+| `NavContribution.menuEntries` | a way in from the feed's overflow and the settings screen | `:app`, through `LocalNavMenu` |
+| `ActivityActionProvider` | an *action on somebody else's screen* | `feature:activity`, into its top-bar overflow |
+
+The last one is what session 2 step 4 was blocked on and is worth understanding before adding a
+feature that needs to reach into another. `ActivityScreen` is `internal` to `feature:activity`;
+`feature:sources` owns the archive, the visibility call, and the words that explain them; a
+feature may not depend on another (Principle VII). So archive-and-restore existed on the archive
+screen and over ADB while the screen the athlete was actually looking at could not offer it.
+`ArchiveActionProvider` now binds `@IntoSet` and the detail screen renders whatever it is handed:
+neither module names the other. The provider is *asked* what applies to the activity in front of
+the athlete (`actionsFor(target)`), which is what lets one provider offer "Set aside" on an
+active recording and "Restore" on an archived one without the detail screen knowing either word.
+
+**`bottomBarEntry` was declared for months and read by nobody.** The only way to any screen but
+the feed was an overflow behind three dots. `:app` builds the bar from the registry now, hides
+it below the top level, and `Navigator.navigateTopLevel` is what makes it behave like tabs
+rather than a stack — `popUpTo(start) { saveState = true }`, `launchSingleTop`, `restoreState`.
+Without that trio, four taps on four tabs cost four presses of back and the feed forgets its
+scroll position every time you leave it.
+
+**One registry, one consumer.** `menuEntries` was read in two places at once — the feed's
+overflow and the settings screen's "More" card — so Sources, Archive, Updates and About were
+each offered twice, on two screens, from the same set. The overflow is gone: of the two, a
+three-dot menu is where an app puts what it hopes you will not need, and Settings is a tab on
+the bar. The registry itself is unchanged; it simply has one reader now. Found by the athlete
+looking at the app, which is the only way this kind of thing is ever found.
+
+**A bottom bar and a FAB do not fit on a landscape phone.** Together they take a third of a
+400 dp-tall window away from a scrolling list. `:app` draws a **navigation rail** instead below
+`COMPACT_HEIGHT_DP` (480 dp) — Material's compact-height class — which is the same decision the
+web client's `AppShell` makes at its own breakpoint. Decided from `LocalConfiguration`'s height
+rather than from a window-size-class artefact: it is one threshold, and that dependency is not
+otherwise in the build.
+
+**A tab must not draw a back arrow.** Back on a top-level destination points at whichever screen
+happened to precede it, or leaves the app; the bar is the way between them. `feature:health` had
+one and no longer takes an `onBack` at all, which is the version that cannot regress.
+
+**`core:preferences` is where a setting lives, and the split matters.** Appearance (theme mode,
+dynamic colour) is about *this phone* and stays local; the unit system belongs to the *account*,
+because the browser renders the same ride and two clients disagreeing about kilometres is SC-008
+failing. The local `unitSystem` is a mirror of the server's, written back by every screen that
+happens to read `/api/auth/me`, so the phone converges whichever screen is opened first. It used
+to be read by the detail screen only, which is how the feed came to draw kilometres under a
+detail screen drawing miles. `AppPreferences.clearAccountScoped()` drops the mirror on sign-out
+and leaves the appearance alone.
+
+**Sign-out is `AccountSession.signOut()` and it does four things, not one.** Token, cached feed,
+**sync cursor** and the mirrored units. The cursor is the one that is easy to miss: it belongs to
+the account that was signed in, and leaving it makes the next account's first sync resume from
+"now", read nothing, and report success — which presents as a sync button that does nothing. The
+server half (revoke this device, end the session) is best-effort and the local half is not: an
+athlete who taps sign out on a train has still asked to be signed out. The debug `logout` command
+calls the same function, so what an automated run exercises is what a finger on the phone does.
+
+**The app is localised, and the labels a module hands to another module are resource ids.**
+Every `feature:*` module carries its own `res/values/strings.xml` and `values-ru/strings.xml`;
+shared vocabulary — sport names, metric names, "Try again" — lives in `core:ui` and is reached
+through `dev.healthhub.core.ui.R` (AGP generates one `R` per module, so a library's resources
+are named by that library rather than by whoever uses them: `import dev.healthhub.core.ui.R as
+CoreR`).
+
+Three consequences worth knowing before adding a screen:
+
+- **`BottomBarEntry.label`, `MenuEntry.label`, `ActivityAction.label` and
+  `ActivityActionResult.message` are `@StringRes Int`, not `String`.** Whoever *draws* them is
+  in another module — `:app` draws the bar, `feature:activity` draws the action menu — and a
+  module handing over a finished string would have had to translate it at a point where it has
+  no `Context`. The id travels; the lookup happens in the composition;
+- **a failure's own message stays a string.** `ActivityMessage` is a sealed pair of `Resource`
+  and `Text` for exactly this: there is no catalogue of every sentence a network stack can
+  produce, and one generic translated sentence for all of them hides the detail that makes a
+  failure diagnosable. The sentence *around* the cause is translated; the cause is quoted;
+- **a lambda parameter that resolves a resource must be `@Composable`.** `SettingsScreen`'s
+  `Choice` takes `label: @Composable (T) -> String`, and its result is read into a local
+  *before* the `Modifier.clearAndSetSemantics` block — that block is an ordinary lambda, not a
+  composition, and a resource lookup cannot happen inside one.
+
+**The unit suffixes are localised through a default parameter, and the default is English.**
+`Format` is a pure object with no `Context`, and its rounding is pinned by `FormatTest` against
+`web/src/core/format.ts` — so a *required* labels argument would have put a language into every
+one of those assertions. Instead every function takes `labels: UnitLabels = UnitLabels.ENGLISH`:
+a screen calls `unitLabels()` and passes the result, a test leaves it alone and keeps asserting
+on "41.20 km". Resolve it **once per composable**, not per figure: the feed card formats six
+figures and is drawn for every row of a list somebody scrolls a month of.
+
+**The web client's localisation is `core/i18n.ts`, forty lines and no dependency.** The entry
+chunk is a two-second budget that is already 90% React, and an i18n library solves problems this
+product does not have. What matters is where the *strings* live: each screen declares its own
+bundle beside itself and reads it with `useMessages`, so a lazily-imported screen's words land in
+that screen's chunk rather than in the entry. A central dictionary would have put every word of
+the archive and the analytics console into the first thing the browser parses. Measured: the
+whole mechanism plus the shell, feed, sign-in and health strings cost 2.7 kB on the entry chunk,
+and the health strings went into `HealthScreen-*.js` where they belong.
+
+Three things it does deliberately: it matches on the **language and drops the region**, because
+`ru-RU` and `ru-BY` are one translation and matching the full tag serves English to everybody
+outside Russia; it falls back **key by key**, so a missing entry shows in English while the rest
+of the screen stays translated; and it uses Android's **positional** `%1$s` form, because the
+same sentence exists in `res/values-ru/` and a translator moving between the two files should
+not have to learn a second syntax — and because word order genuinely differs, so an argument
+has to be able to move.
+
+`format.ts`'s `UnitLabels` is the twin of `Format.kt`'s, field for field, with the same
+English default for the same reason: the tests on both sides assert the English strings, so a
+required argument would have put a language into every one of them.
+
+**`core:ui` has source now, and it is where a rule that two screens share belongs.** It carries
+`Format` (one copy of every rounding rule, replacing four), `HealthHubIcons` (one glyph per
+concept, named after the concept), and the shared Expressive composables — `StatTile`,
+`MetricLabel`, `SectionCard`, `SectionHeader`, `EmptyState`, `ErrorState` and the skeletons.
+Reach for it before writing a second private `Stat` or a fourth `Format`. Two things it must not
+become: it does **not** compute a metric (that is `core:telemetry`, on the device, at ingest),
+and it does **not** use an Expressive API directly — those stay wrapped in `core:designsystem`
+so an alpha bump is a one-module change. `HealthHubNavigationBar` and `HealthHubProgressBar` are
+what that wrapping looks like.
 
 **The icon set is `material-icons-extended`, and it is on the convention plugin.** The core set
 is a back arrow, a search glass and about twenty others: no heart, no stopwatch, no mountain,
@@ -318,6 +432,31 @@ longer says it is. A route import rewrites both `.hht` objects at the same key. 
 `private, max-age=0, must-revalidate`; conditional requests already worked, so revalidation
 costs a 304 with no body and no R2 egress.
 
+**Absence cannot be read, so deletions come from the change log (FR-007).** `readRecords`
+returns what exists; no range query can report that a workout has gone. The only thing that can
+is `getChangesToken` / `getChanges`, and it answers "what changed since this token" rather than
+"what is missing". Three consequences, all of them visible to the athlete:
+
+- **the first sync propagates nothing.** There is no token yet, so `SyncEngine.propagateDeletions`
+  takes one and reports zero; deletions flow from the second sync onwards. The token is taken at
+  the *end* of the first sync, not the start — a workout deleted while that sync was running
+  would otherwise fall in the gap between the two;
+- **an expired token is a gap, not a deletion.** Health Connect drops one after about a month.
+  A phone that has been off that long takes a fresh token and reports nothing. Inventing
+  deletions out of a gap would remove workouts nobody deleted;
+- **the change log is paged.** `hasMore` / `nextChangesToken` are drained in one pass, or a
+  deletion sits unpropagated behind an upsertion-heavy page.
+
+The server side is `POST /api/activities/deleted`, which takes `sourceUids` — the change log
+reports a deleted *record*, and that id is what the activity was ingested under, so neither side
+looks anything up. It is a **soft** delete, and the distinction is the storage design: *archived*
+is a duplicate the sync demoted and the athlete can restore; *deleted* is the athlete removing it
+at the source. `deleted_at` is what every read path already filters on, so one stamp clears it
+from the feed, the archive, the detail route and the analytical export at once — and the upsert
+sets `deleted_at = NULL`, so re-adding the record in Health Connect brings the workout back.
+The token advances only after the server accepts the list, and the route is idempotent, so a
+failure means the next sync reports the same ids again and nothing is lost.
+
 **There is an API quota.** Eight reads per session exhausted it around session 75 with
 *"API call quota exceeded"*. Reads are batched per day-window instead: eight calls per window
 regardless of how many sessions it contains.
@@ -363,19 +502,46 @@ that was really ~42 km. Rules:
 - Sanity check: distance must agree with average speed over elapsed time. If it does not,
   you are double counting.
 
+**Average speed is distance over moving time, never the mean of the speed channel.** A sampled
+mean weights a minute standing at a traffic light exactly like a minute at thirty. The detail
+screen's range statistics have said so in a comment for months and computed it correctly for a
+*selection*, while the summary above them came from `Metrics.mean(speed)` at ingest. What that
+produced, read off a Pixel: a 1.43 km walk with elapsed 22:59, moving 6:04 and an average pace
+of 18:06 /km — and 1.43 km at 18:06 /km is 25:53, **longer than the elapsed time on the tile
+beside it**. Three figures on one screen from three different places, one of them arithmetically
+impossible against the others. `Metrics.averageSpeed` is now the one rule: distance over moving,
+falling back to distance over elapsed when moving is unknown, and to the channel mean only when
+there is no distance at all (a treadmill session with a speed trace and nothing else). Verified
+on the device afterwards — every card in the feed now multiplies out.
+
 **Zero is not a measurement.** A session whose speed channel never crosses the moving
 threshold has *unknown* moving time, not none — storing 0 made the feed show "0:00" for real
 workouts. Same for distance: fall back to the recorded aggregate when there is no GPS.
 
-**A sparse source silently loses its moving time.** `Metrics.movingSeconds` skips any interval
-longer than `MAX_SAMPLE_GAP_SECONDS` (30 s), on the reasonable theory that a long gap is not
-evidence of movement. But Google Fit samples a walk about once every 77 seconds, so *every*
-interval is skipped and a 46-minute walk is stored as 2:56 of moving time. Found on a real Pixel:
-the detail screen's own range statistics, which have no such cap, reported 27:35 over the same
-samples. Both numbers are on the same screen and they disagree, which is precisely what SC-008
-forbids. The threshold needs to follow the source's actual cadence rather than assume 1 Hz, and
-all three implementations of the rule — `Metrics`, Android `TelemetryAnalysis`, web `analysis.ts`
-— have to agree once it does.
+**A sparse source silently lost its moving time — settled: the gap threshold follows the
+source's cadence.** `Metrics.movingSeconds` used to skip any interval longer than a flat 30 s,
+on the reasonable theory that a long gap is not evidence of movement. It is reasonable at 1 Hz
+and wrong at anything else: Google Fit samples a walk about once every 77 seconds, so *every*
+interval was skipped and a 46-minute walk was stored as 2:56 of moving time — while the detail
+screen's own range statistics, which had no cap at all, reported 27:35 over the same samples.
+Two numbers on one screen, which is what SC-008 forbids, and neither was right.
+
+`Metrics.sampleGapCapSeconds` is the rule now: `max(30 s, 3 × the median sample interval)`, and
+all three implementations apply it — `Metrics` (moving time *and* zones), Android
+`TelemetryAnalysis`, web `analysis.ts`. Four things about it are decisions rather than details:
+
+- **a 1 Hz recording is unchanged.** Three times a one-second cadence is three seconds, and the
+  floor keeps the cap at 30 — so every activity already synced from a dense source keeps exactly
+  the moving time it was stored with. That is what made this safe to ship over a synced history
+  rather than a migration;
+- **the median, not the mean.** A ride with one coffee stop has a mean interval dragged upwards
+  by the stop, and would then count the stop as movement;
+- **below `MIN_INTERVALS_FOR_CADENCE` (10) intervals there is no cadence**, and the flat floor
+  stands. Three samples one second and then five minutes apart have a *median* of two and a half
+  minutes; treating that as "how often this source writes" turns the pause into movement;
+- **zones were broken the same way and are fixed by the same change.** A sparse source's every
+  interval exceeded the flat cap, so its time-in-zone came out as all zeroes — an empty bar
+  chart under a full heart-rate trace.
 
 **The sync cursor belongs to an account.** Signing out must clear it, or the next account's
 first sync reads from "now" and imports nothing — which presents as a dead sync button.
@@ -473,6 +639,27 @@ app happens either way.
 ---
 
 ## Web client
+
+**The end-to-end run is `npm run test:e2e`, and it starts the real Worker.** Not a mocked API:
+what these tests are for is the seam the unit tests cannot reach — the SPA and the API behaving
+as one origin, a session cookie surviving a reload, and a screen rendering what D1 actually
+returned. A mocked API would pass with the Worker switched off. Three things cost time:
+
+- **Vite binds `[::1]` only.** Playwright polls the IPv4 `baseURL`, the readiness check times out
+  after two minutes, and nothing in the log says why — the server is up, on an address nobody is
+  asking about. `--host 127.0.0.1` is load-bearing in `playwright.config.ts`;
+- **the auth rate limiter throttles a browser suite too.** Ten sign-ups per IP per fifteen
+  minutes, and every test comes from 127.0.0.1 — so the sixth test fails with a screen that
+  simply never became the feed. `context.setExtraHTTPHeaders({'cf-connecting-ip': …})` per test,
+  the same fix `worker/test` uses;
+- **seed through the real upload route, not by writing to D1.** `activity.spec.ts` registers,
+  buys a device token and posts a workout exactly as the phone does, because the shape of that
+  request is part of what is under test: the Worker stores what the phone computed and
+  recomputes nothing, so a figure that came out wrong would mean the contract drifted. Handing
+  the browser the session cookie the API just issued is what lets the page open signed in;
+- **assert on what the deployment offers, not on what yours has.** The first sign-out test looked
+  for the Auth0 button, which a deployment without Auth0 configured correctly does not render —
+  `/api/auth/providers` decides. The test was asserting a configuration rather than a behaviour.
 
 **MapLibre's worker does not survive bundling.** MapLibre 6 resolves `maplibre-gl-worker.mjs`
 relative to its own module URL, which after a build is an asset path that does not exist. The
@@ -592,6 +779,20 @@ presentational, by specification. A labelled `role="region"` keeps the name and 
 controls reachable. `role="img"` is right on the chart panels, where the subtree really is
 nothing but a canvas.
 
+**The web client's navigation is `core/m3e/AppShell.tsx`, and it is one component in two
+shapes.** A bar along the bottom under 48 rem, a rail down the side above it, decided in a media
+query rather than from a measured width — so there is no first frame in the wrong shape and no
+resize listener to leak. The breakpoint is in `rem` for the same reason the type scale is: a
+`px` breakpoint does not trip when the reader's *text* grows, which is exactly when the
+horizontal room runs out. `current === null` is how a screen below the top level says "draw no
+navigation"; the activity detail passes it, because that screen has its own way back and four
+sideways moves over it are chrome. The four destinations are the phone's four, in the phone's
+order, on purpose.
+
+The file lives in `core/m3e` because that directory is already on the cold-start path, which
+means `budget.test.ts` checks it for free — a static import of MapLibre or the telemetry codec
+from the navigation shell would fail the build.
+
 **Every route below the feed is lazily imported, and that is a budget, not a habit.** The
 feed is what opens on a cold cache. `App.tsx` code-splits the activity, archive, sources and
 health routes; a static import from `App.tsx` into any of them silently folds that screen
@@ -606,17 +807,18 @@ obvious in the *app* attribution long before it is obvious in the total.
 
 ## Rules that exist twice
 
-Analysis lives on the device, so almost nothing is implemented in two places. Four things are —
-three because the *screen* derives them and both clients have a screen, and one because both
+Analysis lives on the device, so almost nothing is implemented in two places. Five things are —
+four because the *screen* derives them and both clients have a screen, and one because both
 clients have a sign-in form. SC-008 is the criterion that fails when a pair drifts, and it
 fails on a real ride in front of a person, months later.
 
 | Rule | Kotlin | TypeScript |
 |---|---|---|
 | Distance axis, range statistics | `feature/activity/TelemetryAnalysis.kt` | `web/src/core/telemetry/analysis.ts` |
+| Readiness and daily trends | `feature/health/{Readiness,Trends}.kt` | `web/src/features/health/recovery.ts` |
 | Chart reduction — bucket means | `feature/activity/ChartSeries.kt` | `web/src/core/charts/buckets.ts` |
 | Route segmentation and gap detection | `feature/activity/RouteGeometry.kt` | `web/src/core/map/route.ts` |
-| Number and unit formatting | `feature/activity/Format.kt` | `web/src/core/format.ts` |
+| Number and unit formatting | `core/ui/Format.kt` | `web/src/core/format.ts` |
 | Password pre-hash | `core/network/PasswordProofs.kt` | `web/src/features/auth/prehash.ts` |
 
 The password pre-hash is the one where drift is not a wrong number on a screen: an athlete who
@@ -662,15 +864,23 @@ The constants that must move together:
   reported zero segments rather than the two it was looking for — a test that reads like a
   regression in the splitter and is really arithmetic in the fixture. Both twins now use the same
   figures: 11 m legs at 1 Hz, one 16 km jump.
-- The speed-versus-pace sport set, and every rounding rule beside it. `FeedScreen.kt` has its
-  own copy of the sport set that is missing `swimming`; the detail screen's is the correct one.
-  `feature/sources/Format.kt` is a *fourth* copy, added because the archive card shows the same
-  figures and a feature module may not depend on another. Three Kotlin copies of one rounding
-  rule is one too many: `core:ui` exists, has no source, and is where this belongs the moment
-  someone is allowed to edit `feature:activity` and `feature:feed` in the same change.
+- The speed-versus-pace sport set, and every rounding rule beside it. There were **four**
+  Kotlin copies — `feature:activity`, `feature:feed`, `feature:sources`, and `feature:health`
+  for its durations — because a feature module may not depend on another one and `core:ui` had
+  no source. One had already drifted: `FeedScreen.kt`'s sport set was missing `swimming`, so a
+  swim read as a pace in the feed and as a speed on the screen that card opens. There is now
+  exactly one, `core/ui/Format.kt`, and `core/ui/FormatTest.kt` pins the rules against
+  `web/src/core/format.ts` — including the swimming case, which is the regression that
+  motivated the module acquiring source at all.
 
-One deliberate divergence: `Metrics.movingSeconds` ignores sample gaps longer than 30 s, and
-neither screen's range statistics do. The screens mirror each other, not the ingest path.
+- The gap rule, `MAX_SAMPLE_GAP_SECONDS = 30` / `GAP_MULTIPLE = 3` /
+  `MIN_INTERVALS_FOR_CADENCE = 10`, and the function over them —
+  `Metrics.sampleGapCapSeconds` and `sampleGapCapSeconds` in `analysis.ts`. This used to be
+  listed here as a *deliberate divergence*: the ingest path capped at 30 s and neither screen's
+  range statistics capped at all, on the grounds that the screens mirror each other rather than
+  the ingest path. That was the bug, not the design — the summary card and the range statistics
+  sit on the same screen, an athlete reads both, and on a sparse source they were an order of
+  magnitude apart. All three now apply one rule.
 
 ## Design tokens
 
