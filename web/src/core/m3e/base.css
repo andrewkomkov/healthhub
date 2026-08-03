@@ -175,6 +175,25 @@ body {
   transform: scale(0.995);
 }
 
+/*
+ * A whole card that is one control.
+ *
+ * The feed card used to be an `article` carrying `role="button"`, `tabIndex` and a hand-written
+ * Enter/Space handler — which is three re-implementations of what the element already does, and
+ * it got two of them slightly wrong: no `:active` state from the platform, and a role that
+ * contradicts the element it is on. A real `button` needs only its own appearance reset, which
+ * is all this rule is.
+ */
+.m3-card--button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: inherit;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+
 /* ---------------------------------------------------------------------- buttons */
 
 .m3-button {
@@ -754,6 +773,115 @@ body {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ navigation shell */
+
+/*
+ * One component, two shapes: a bar along the bottom on a narrow viewport, a rail down the side
+ * on a wide one. The switch is here rather than in JavaScript so there is no first frame in the
+ * wrong shape and no resize listener to leak.
+ *
+ * The breakpoint is in `rem`, which is load-bearing: a breakpoint in `px` does not trip when
+ * the reader's *text* grows, and running out of horizontal room is exactly what happens when it
+ * does. Same reasoning as the type scale being published in `rem`.
+ */
+.hh-shell {
+  min-height: 100%;
+  display: grid;
+}
+
+.hh-shell__content {
+  min-width: 0;
+}
+
+.hh-nav {
+  display: flex;
+  background: var(--md-sys-color-surface-container);
+  --hh-nav-item-direction: column;
+}
+
+.hh-nav__item {
+  display: flex;
+  flex-direction: var(--hh-nav-item-direction);
+  align-items: center;
+  justify-content: center;
+  gap: var(--hh-space-xs);
+  /* The Material touch target, and the reason the label sits under a padded mark rather than
+     beside a bare 24 px glyph. */
+  min-height: 56px;
+  padding: var(--hh-space-sm) var(--hh-space-xs);
+  border: none;
+  background: none;
+  color: var(--md-sys-color-on-surface-variant);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    color var(--md-sys-motion-effects-default),
+    background var(--md-sys-motion-effects-default);
+}
+
+.hh-nav__item:hover {
+  color: var(--md-sys-color-on-surface);
+}
+
+/* The pill behind the mark is the selected indicator — Expressive's, not a coloured label. */
+.hh-nav__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 32px;
+  border-radius: var(--md-sys-shape-full);
+  transition:
+    background var(--md-sys-motion-effects-default),
+    color var(--md-sys-motion-effects-default);
+}
+
+.hh-nav__item--selected {
+  color: var(--md-sys-color-on-surface);
+}
+
+.hh-nav__item--selected .hh-nav__mark {
+  background: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+/* Narrow: a bar across the bottom, where the thumb is. */
+@media (width <= 48rem) {
+  .hh-shell {
+    grid-template-rows: 1fr auto;
+  }
+  .hh-nav {
+    order: 2;
+    justify-content: space-around;
+    position: sticky;
+    bottom: 0;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    /* Clear of a gesture bar or a home indicator. */
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .hh-nav__item {
+    flex: 1;
+  }
+}
+
+/* Wide: a rail down the side. A bottom bar on a desktop is as far from the content as the
+   window allows, which is the opposite of what a navigation surface is for. */
+@media (width > 48rem) {
+  .hh-shell {
+    grid-template-columns: auto 1fr;
+  }
+  .hh-nav {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--hh-space-xs);
+    padding: var(--hh-space-lg) var(--hh-space-sm);
+    border-right: 1px solid var(--md-sys-color-outline-variant);
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
 }
 
 /* Respect the athlete's motion preference — Expressive motion is emphatic by design. */

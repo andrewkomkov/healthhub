@@ -28,6 +28,12 @@ export type IconName =
   | 'route'
   | 'layers'
   | 'map'
+  // The navigation marks. Not metrics — these name a destination rather than a measurement,
+  // and the phone's bar draws the same four.
+  | 'activities'
+  | 'health'
+  | 'sources'
+  | 'archive'
 
 interface Glyph {
   /** Stroked outline. */
@@ -54,6 +60,22 @@ const GLYPHS: Record<IconName, Glyph> = {
   route: { d: 'M6.5 19.5a2.5 2.5 0 1 0 0-5h11a2.5 2.5 0 1 0 0-5' },
   layers: { d: 'm12 3.2 8.5 4.6L12 12.4 3.5 7.8ZM3.5 14.2 12 18.8l8.5-4.6' },
   map: { d: 'm9 4.6-6 2.1v13.2l6-2.1 6 2.1 6-2.1V4.5l-6 2.1ZM9 4.6v13.2M15 6.7v13.2' },
+  // A running figure, reduced to what survives at 24 units: a head, a torso, two limbs.
+  activities: {
+    fill: 'M14.6 5.4a1.9 1.9 0 1 0 0-3.8 1.9 1.9 0 0 0 0 3.8Z',
+    d: 'M13.3 7.2 9.8 9l-1.3 4M13.3 7.2l2.9 1.7 1 3.6M13.3 7.2l-1.1 5.4 3.2 2.6 1 6.4M12.2 12.6l-3.4 3-3.3 1.2',
+  },
+  // A heart with a trace through it: the same idea as the phone's monitor-heart mark.
+  health: {
+    d: 'M12 20.2 5.4 13.4a4.5 4.5 0 0 1 .3-6.5 4.5 4.5 0 0 1 6.3.7 4.5 4.5 0 0 1 6.3-.7 4.5 4.5 0 0 1 .3 6.5l-1.3 1.4M6.8 13h2.6l1.4-3 2 6 1.3-3h3.3',
+  },
+  // Four tiles: the apps writing into Health Connect, which is what a source is.
+  sources: {
+    d: 'M4.5 4.5h5.2v5.2H4.5ZM14.3 4.5h5.2v5.2h-5.2ZM4.5 14.3h5.2v5.2H4.5ZM14.3 14.3h5.2v5.2h-5.2Z',
+  },
+  // A box with a lid. Deliberately not a bin: nothing here is ever thrown away, and the mark
+  // has to say so as plainly as `labels.ts` does.
+  archive: { d: 'M3.2 4.6h17.6v4H3.2ZM4.8 8.6v10.8h14.4V8.6M9.6 12.4h4.8' },
 }
 
 export function Icon({

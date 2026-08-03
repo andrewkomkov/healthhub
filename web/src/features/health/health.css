@@ -1,0 +1,81 @@
+/*
+ * Sleep and recovery.
+ *
+ * Every value comes from the generated tokens, like everywhere else — no colour, radius or
+ * easing is introduced here.
+ */
+
+.hh-readiness__value {
+  margin: 0;
+  color: var(--md-sys-color-primary);
+  line-height: 1;
+}
+
+.hh-readiness__components {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hh-readiness__components li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--hh-space-sm);
+}
+
+.hh-stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hh-space-sm);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * Label, bar, figure. The bar is `aria-hidden` and the figure beside it carries the value:
+ * a length is a shape to compare, not a number to read, and a screen reader given both would
+ * announce the same thing twice.
+ */
+.hh-stages__row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr 5rem;
+  align-items: center;
+  gap: var(--hh-space-md);
+}
+
+.hh-stages__bar {
+  height: 12px;
+  min-width: 2px;
+  border-radius: var(--md-sys-shape-full);
+  background: var(--chart-channel-hr);
+}
+
+.hh-stages__row .numeric {
+  text-align: right;
+}
+
+/*
+ * The trend strip. One bar per day, oldest on the left.
+ *
+ * Bars rather than a line and no axis on purpose: the question is "is today unlike my recent
+ * days", which is a shape. The figures meant to be *read* sit above it in words, which is also
+ * what the strip's own `aria-label` says — the bars are one image, not twenty-one stops.
+ */
+.hh-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 72px;
+}
+
+.hh-trend__bar {
+  flex: 1;
+  min-width: 3px;
+  border-radius: var(--md-sys-shape-extra-small);
+  background: var(--chart-channel-hrv);
+}

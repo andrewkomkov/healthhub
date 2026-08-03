@@ -101,7 +101,7 @@ describe('dynamic theme', () => {
       'designsystem',
       'DynamicColors.kt',
     )
-    const body = /fun toRoleMap\([\s\S]*?\n    \)/.exec(kotlin)?.[0] ?? ''
+    const body = /fun toRoleMap\([\s\S]*?\n {4}\)/.exec(kotlin)?.[0] ?? ''
     const uploaded = [...body.matchAll(/"(\w+)" to/g)].map(([, role]) => role as string)
     expect(uploaded.length).toBeGreaterThan(0)
     for (const role of uploaded) expect(dynamicRoles.has(role)).toBe(true)

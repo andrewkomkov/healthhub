@@ -220,6 +220,48 @@ export interface DynamicThemePayload {
   updatedAt: number
 }
 
+/*
+ * The daily-grain health rows, as `/api/health-records` returns them.
+ *
+ * Here with every other wire type rather than beside the screen that reads them: the direction
+ * of the dependency matters, and a `core` module importing a type out of a `feature` is the
+ * shape that eventually makes two features import each other.
+ */
+export interface Measurement {
+  id: string
+  kind: string
+  measuredAt: number
+  tzOffsetMinutes: number
+  localDate: string
+  value: number
+  secondaryValue: number | null
+  unit: string | null
+}
+
+export interface SleepStages {
+  awake: number | null
+  awakeInBed: number | null
+  outOfBed: number | null
+  sleeping: number | null
+  light: number | null
+  deep: number | null
+  rem: number | null
+  unknown: number | null
+}
+
+export interface SleepNight {
+  id: string
+  startTime: number
+  endTime: number
+  tzOffsetMinutes: number
+  localDate: string
+  totalSeconds: number
+  timeInBedSeconds: number | null
+  stages: SleepStages
+  stageCount: number
+}
+
+
 export const api = {
   /** Which sign-in methods this deployment actually has configured. */
   providers: () => request<Providers>('/auth/providers'),
@@ -294,6 +336,29 @@ export const api = {
     }),
 
   sources: () => request<{ sources: Source[] }>('/sources'),
+
+  /**
+   * The daily-grain measurements — HRV, resting heart rate, blood oxygen, weight and the rest.
+   *
+   * `from` is a millisecond instant, and the default page is ninety rather than the feed's
+   * thirty: these screens are trends, and three months of mornings is the shape of the question
+   * being asked rather than three months of scrolling.
+   */
+  measurements: (params: { kind?: string; from?: number; limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.kind) query.set('kind', params.kind)
+    if (params.from) query.set('from', String(params.from))
+    query.set('limit', String(params.limit ?? 120))
+    return request<{ measurements: Measurement[] }>(`/health-records/measurements?${query}`)
+  },
+
+  /** Nights, newest first, with the stage totals the phone computed. */
+  sleeps: (params: { from?: number; limit?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.from) query.set('from', String(params.from))
+    query.set('limit', String(params.limit ?? 30))
+    return request<{ sleeps: SleepNight[] }>(`/health-records/sleep?${query}`)
+  },
 
   /**
    * Stores the athlete's trust order. The array order *is* the priority, so the whole list
