@@ -57,6 +57,16 @@ data class ActivityDetailDto(
     val visibility: String = "active",
     val archivedReason: String? = null,
     val visibilityLocked: Boolean = false,
+    /**
+     * The recording this one was archived in favour of, when it was.
+     *
+     * Null for anything the feed shows. Detail-response only, and the reason it exists is the
+     * same as [visibility]'s: a route import re-uploads the workout and carries the duplicate
+     * verdict with it, so a screen that cannot tell "archived duplicate of something still in
+     * the feed" from "archived by hand" has to refuse the import rather than risk resurrecting
+     * a recording the athlete set aside.
+     */
+    val duplicateOf: String? = null,
     val sampleCount: Int = 0,
     val channels: List<String> = emptyList(),
     val telemetry: TelemetryAvailabilityDto = TelemetryAvailabilityDto(),

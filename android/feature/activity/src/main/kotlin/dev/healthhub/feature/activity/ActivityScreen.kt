@@ -8,31 +8,24 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.rounded.Bolt
-import androidx.compose.material.icons.rounded.Favorite
-import androidx.compose.material.icons.rounded.LocalFireDepartment
-import androidx.compose.material.icons.rounded.MonitorHeart
-import androidx.compose.material.icons.rounded.Route
-import androidx.compose.material.icons.rounded.Schedule
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Terrain
-import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material.icons.rounded.Schedule
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,17 +39,26 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import dev.healthhub.core.designsystem.ExpressiveShapes
 import dev.healthhub.core.designsystem.HealthHubType
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.model.RoutePoint
 import dev.healthhub.core.model.UnitSystem
-import kotlin.math.roundToInt
+import dev.healthhub.core.navigation.ActivityAction
+import dev.healthhub.core.ui.ErrorState
+import dev.healthhub.core.ui.Format
+import dev.healthhub.core.ui.UnitLabels
+import dev.healthhub.core.ui.unitLabels
+import dev.healthhub.core.ui.HealthHubIcons
+import dev.healthhub.core.ui.SectionCard
+import dev.healthhub.core.ui.SkeletonBox
+import dev.healthhub.core.ui.SkeletonLine
+import dev.healthhub.core.ui.StatTile
+import dev.healthhub.core.ui.sportName
+import dev.healthhub.core.ui.R as CoreR
 
 /**
  * The activity detail screen: summary, route, aligned charts, splits and zones.
@@ -68,25 +70,42 @@ import kotlin.math.roundToInt
  */
 private val PANEL_ORDER = listOf("elevation", "speed", "hr", "cadence", "power")
 
+/** A channel's name, looked up where there is a `Context` to look it up with. */
 private val PANEL_LABELS = mapOf(
-    "elevation" to "Elevation",
-    "speed" to "Speed",
-    "hr" to "Heart rate",
-    "cadence" to "Cadence",
-    "power" to "Power",
+    "elevation" to R.string.channel_elevation,
+    "speed" to R.string.channel_speed,
+    "hr" to R.string.channel_hr,
+    "cadence" to R.string.channel_cadence,
+    "power" to R.string.channel_power,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ActivityScreen(onBack: () -> Unit, viewModel: ActivityViewModel = hiltViewModel()) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
+    var confirming by remember { mutableStateOf<ActivityAction?>(null) }
+
+    val message = state.message
+    // Resolved in the composition, where a `Context` exists, and only then handed to the
+    // snackbar — the view model has no business knowing what language the phone is in.
+    val messageText = when (message) {
+        is ActivityMessage.Resource -> stringResource(message.id)
+        is ActivityMessage.Text -> message.value
+        null -> null
+    }
+    LaunchedEffect(messageText) {
+        if (messageText == null) return@LaunchedEffect
+        snackbar.showSnackbar(messageText)
+        viewModel.messageShown()
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        state.activity?.let { Format.sportLabel(it.sport) } ?: "Activity",
+                        state.activity?.let { sportName(it.sport) } ?: stringResource(R.string.activity_fallback_title),
                         style = HealthHubType.titleLargeEmphasized,
                     )
                 },
@@ -95,34 +114,44 @@ internal fun ActivityScreen(onBack: () -> Unit, viewModel: ActivityViewModel = h
                 // it and competes with the title for the eye.
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to activities",
-                        )
+                        Icon(HealthHubIcons.Back, contentDescription = stringResource(CoreR.string.action_back))
                     }
+                },
+                actions = {
+                    // Whatever other modules contribute for this workout. This screen names
+                    // none of them and does not know what any of them do — see
+                    // `ActivityActionProvider`. An empty set draws no button at all, which is
+                    // what a build without `feature:sources` in it should look like.
+                    ActionMenu(
+                        actions = state.actions,
+                        running = state.runningAction,
+                        onSelect = { action ->
+                            if (action.confirm != null) confirming = action
+                            else viewModel.perform(action)
+                        },
+                    )
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         val activity = state.activity
         when {
-            state.loading && activity == null -> Box(Modifier.fillMaxSize().padding(padding)) {
-                CircularProgressIndicator(Modifier.align(Alignment.Center))
-            }
+            // A skeleton in the shape of the screen, not a spinner in the middle of it. This
+            // one opens on a tap from a card the athlete is already looking at, so the layout
+            // arriving before the numbers is what makes the transition read as continuous.
+            state.loading && activity == null ->
+                ActivityDetailSkeleton(modifier = Modifier.padding(padding))
 
-            activity == null -> Column(
-                modifier = Modifier.fillMaxSize().padding(padding).padding(Spacing.xl),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(Spacing.sm),
+            activity == null -> Box(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentAlignment = Alignment.Center,
             ) {
-                Text("Could not open this activity", style = MaterialTheme.typography.titleLarge)
-                Text(
-                    state.error ?: "It may not have finished syncing yet.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                ErrorState(
+                    title = stringResource(R.string.activity_error_title),
+                    message = state.error ?: stringResource(R.string.activity_error_body),
+                    onRetry = viewModel::load,
                 )
-                TextButton(onClick = viewModel::load) { Text("Try again") }
             }
 
             else -> ActivityDetail(
@@ -134,6 +163,62 @@ internal fun ActivityScreen(onBack: () -> Unit, viewModel: ActivityViewModel = h
                 onImportRoute = viewModel::onRouteGranted,
                 modifier = Modifier.padding(padding),
             )
+        }
+    }
+
+    confirming?.let { action ->
+        val confirmation = action.confirm ?: return@let
+        AlertDialog(
+            onDismissRequest = { confirming = null },
+            title = { Text(stringResource(confirmation.title)) },
+            text = { Text(stringResource(confirmation.body)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirming = null
+                    viewModel.perform(action)
+                }) { Text(stringResource(confirmation.confirmLabel)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirming = null }) {
+                    Text(stringResource(CoreR.string.action_cancel))
+                }
+            },
+        )
+    }
+}
+
+/**
+ * The contributed actions, behind one overflow button.
+ *
+ * An overflow rather than icons in the bar: this screen's own title has to survive, the actions
+ * are words rather than universally understood marks ("Set aside" is not a glyph anyone knows),
+ * and there is no upper bound on how many modules contribute — a bar that grows a button per
+ * installed feature stops being a title bar.
+ */
+@Composable
+private fun ActionMenu(
+    actions: List<ActivityAction>,
+    running: String?,
+    onSelect: (ActivityAction) -> Unit,
+) {
+    if (actions.isEmpty()) return
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { open = true }, enabled = running == null) {
+            Icon(HealthHubIcons.Overflow, contentDescription = stringResource(R.string.activity_actions))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            actions.forEach { action ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(action.label)) },
+                    leadingIcon = { Icon(action.icon, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        onSelect(action)
+                    },
+                )
+            }
         }
     }
 }
@@ -162,8 +247,15 @@ private fun ActivityDetail(
 
     val hasDistanceAxis = telemetry?.distance != null
     val activeAxis = if (hasDistanceAxis) axis else Axis.TIME
+    val labels = unitLabels()
     val x = remember(telemetry, activeAxis) { xAxisOf(telemetry, activeAxis) }
-    val panels = remember(telemetry, sport, units) { panelsOf(telemetry, activity, sport, units) }
+    // Resolved here rather than inside `panelsOf`, which is a plain function with no
+    // composition around it: the labels are resources and the strings are what it is handed.
+    val channelNames = PANEL_ORDER.associateWith { stringResource(PANEL_LABELS.getValue(it)) }
+    val paceName = stringResource(R.string.channel_pace)
+    val panels = remember(telemetry, sport, units, channelNames, labels) {
+        panelsOf(telemetry, activity, sport, units, channelNames, paceName, labels)
+    }
 
     Column(
         modifier = modifier
@@ -224,7 +316,7 @@ private fun ActivityDetail(
                 )
                 if (resolution == Resolution.PREVIEW) {
                     Text(
-                        "Preview resolution — loading full detail…",
+                        stringResource(R.string.activity_preview),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -235,9 +327,11 @@ private fun ActivityDetail(
                 val thinned = telemetry?.takeIf { it.decimated }
                 if (thinned != null) {
                     Text(
-                        "Showing 1 sample in " +
-                            "${thinned.storedCount / thinned.count.coerceAtLeast(1)} — " +
-                            "this recording has ${thinned.storedCount} samples.",
+                        stringResource(
+                            R.string.activity_thinned,
+                            thinned.storedCount / thinned.count.coerceAtLeast(1),
+                            thinned.storedCount,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -245,7 +339,7 @@ private fun ActivityDetail(
 
                 TelemetryCharts(
                     x = x,
-                    xFormat = xFormatFor(activeAxis, units),
+                    xFormat = xFormatFor(activeAxis, units, labels),
                     panels = panels,
                     cursor = cursor,
                     selection = selection,
@@ -259,10 +353,9 @@ private fun ActivityDetail(
                 )
             }
         } else if (resolution == Resolution.NONE) {
-            EmptyState(
-                title = "No per-second data for this workout",
-                body = "The source recorded a summary but no samples, so there is nothing to " +
-                    "plot. The figures above are what it did report.",
+            InlineNote(
+                title = stringResource(R.string.activity_no_samples_title),
+                body = stringResource(R.string.activity_no_samples_body),
             )
         }
 
@@ -276,6 +369,7 @@ private fun ActivityDetail(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SummaryCard(activity: ActivityDetailDto, sport: String, units: UnitSystem) {
+    val labels = unitLabels()
     val pacey = !Format.usesSpeed(sport)
     // Tiles rather than a card holding ten label-and-value pairs. Ten pairs inside one container
     // is a table, and a table is read by scanning a column — but there is no column here, only a
@@ -288,91 +382,84 @@ private fun SummaryCard(activity: ActivityDetailDto, sport: String, units: UnitS
         maxItemsInEachRow = 2,
     ) {
         val tile = Modifier.weight(1f)
-        Stat(Icons.Rounded.Route, "Distance", Format.distance(activity.distanceM, units), tile)
-        Stat(
-            Icons.Rounded.Timer,
-            "Moving",
+        StatTile(
+            HealthHubIcons.Distance,
+            stringResource(CoreR.string.metric_distance),
+            Format.distance(activity.distanceM, units, labels),
+            tile,
+        )
+        StatTile(
+            HealthHubIcons.Duration,
+            stringResource(CoreR.string.metric_moving),
             Format.duration(activity.movingSeconds ?: activity.elapsedSeconds),
             tile,
         )
-        Stat(Icons.Rounded.Schedule, "Elapsed", Format.duration(activity.elapsedSeconds), tile)
-        Stat(
-            Icons.Rounded.Speed,
-            if (pacey) "Avg pace" else "Avg speed",
-            Format.paceOrSpeed(activity.avgSpeedMps, sport, units),
+        StatTile(
+            Icons.Rounded.Schedule,
+            stringResource(CoreR.string.metric_elapsed),
+            Format.duration(activity.elapsedSeconds),
+            tile,
+        )
+        StatTile(
+            HealthHubIcons.Pace,
+            stringResource(
+                if (pacey) CoreR.string.metric_avg_pace else CoreR.string.metric_avg_speed,
+            ),
+            Format.paceOrSpeed(activity.avgSpeedMps, sport, units, labels),
             tile,
         )
         activity.maxSpeedMps?.let {
-            Stat(
-                Icons.Rounded.Bolt,
-                if (pacey) "Best pace" else "Max speed",
-                Format.paceOrSpeed(it, sport, units),
+            StatTile(
+                HealthHubIcons.Power,
+                stringResource(
+                    if (pacey) CoreR.string.metric_best_pace else CoreR.string.metric_max_speed,
+                ),
+                Format.paceOrSpeed(it, sport, units, labels),
                 tile,
             )
         }
         activity.elevationGainM?.let {
-            Stat(Icons.Rounded.Terrain, "Elev gain", Format.elevation(it, units), tile)
+            StatTile(
+                HealthHubIcons.Elevation,
+                stringResource(CoreR.string.metric_elevation_gain),
+                Format.elevation(it, units, labels),
+                tile,
+            )
         }
-        activity.avgHrBpm?.let { Stat(Icons.Rounded.Favorite, "Avg HR", "$it bpm", tile) }
-        activity.maxHrBpm?.let { Stat(Icons.Rounded.MonitorHeart, "Max HR", "$it bpm", tile) }
-        activity.avgPowerW?.let { Stat(Icons.Rounded.Bolt, "Avg power", Format.power(it), tile) }
+        activity.avgHrBpm?.let {
+            StatTile(
+                HealthHubIcons.HeartRate,
+                stringResource(CoreR.string.metric_avg_hr),
+                Format.heartRate(it.toDouble(), labels),
+                tile,
+            )
+        }
+        activity.maxHrBpm?.let {
+            StatTile(
+                Icons.Rounded.MonitorHeart,
+                stringResource(CoreR.string.metric_max_hr),
+                Format.heartRate(it.toDouble(), labels),
+                tile,
+            )
+        }
+        activity.avgPowerW?.let {
+            StatTile(
+                HealthHubIcons.Power,
+                stringResource(CoreR.string.metric_avg_power),
+                Format.power(it, labels),
+                tile,
+            )
+        }
         activity.caloriesKcal?.let {
-            Stat(
-                Icons.Rounded.LocalFireDepartment,
-                "Calories",
-                "${it.roundToInt()} kcal",
+            StatTile(
+                HealthHubIcons.Calories,
+                stringResource(CoreR.string.metric_calories),
+                Format.calories(it, labels),
                 tile,
             )
         }
     }
 }
-
-/**
- * One figure, in its own container, under its icon and name.
- *
- * The value carries the Expressive *emphasised* weight and the label does not: the thing that has
- * to be readable at a glance is the number, and the Expressive type scale exists precisely so
- * that prominence is a role rather than a hand-picked size. The icon is what makes the tile
- * findable without reading it at all.
- */
-@Composable
-private fun Stat(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        shape = ExpressiveShapes.largeIncreased,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = Spacing.md, vertical = Spacing.md),
-            verticalArrangement = Arrangement.spacedBy(Spacing.xs),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(STAT_ICON_SIZE),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.width(Spacing.xs))
-                Text(
-                    label,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                )
-            }
-            Text(value, style = HealthHubType.headlineLargeEmphasized, maxLines = 1)
-        }
-    }
-}
-
-/** Sized to the label beside it rather than to the touch grid: nothing here is tappable. */
-private val STAT_ICON_SIZE = 15.dp
 
 /**
  * A figure and its name, with no container of its own.
@@ -409,7 +496,7 @@ private fun SelectionPanel(
     val range = selection.value
     if (channels == null || range == null) {
         Text(
-            "Press and hold a chart, then drag, to see the numbers for just that stretch.",
+            stringResource(R.string.activity_selection_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -419,6 +506,7 @@ private fun SelectionPanel(
     val stats = remember(channels, range) {
         TelemetryAnalysis.rangeStats(channels, range.first, range.last)
     }
+    val labels = unitLabels()
     val pacey = !Format.usesSpeed(sport)
 
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.sm)) {
@@ -427,30 +515,59 @@ private fun SelectionPanel(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Selection", style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { selection.value = null }) { Text("Clear") }
+            Text(
+                stringResource(R.string.activity_selection),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            TextButton(onClick = { selection.value = null }) {
+                Text(stringResource(R.string.activity_selection_clear))
+            }
         }
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(Spacing.xl),
             verticalArrangement = Arrangement.spacedBy(Spacing.md),
         ) {
-            Figure("Distance", Format.distance(stats.distanceM, units))
-            Figure("Elapsed", Format.duration(stats.elapsedSeconds))
-            Figure("Moving", Format.duration(stats.movingSeconds))
             Figure(
-                if (pacey) "Avg pace" else "Avg speed",
-                Format.paceOrSpeed(stats.avgSpeedMps, sport, units),
+                stringResource(CoreR.string.metric_distance),
+                Format.distance(stats.distanceM, units, labels),
             )
-            Figure("Elev gain", Format.elevation(stats.elevationGainM, units))
-            Figure("Avg HR", Format.heartRate(stats.avgHrBpm))
-            stats.avgPowerW?.let { Figure("Avg power", Format.power(it)) }
+            Figure(
+                stringResource(CoreR.string.metric_elapsed),
+                Format.duration(stats.elapsedSeconds),
+            )
+            Figure(
+                stringResource(CoreR.string.metric_moving),
+                Format.duration(stats.movingSeconds),
+            )
+            Figure(
+                stringResource(
+                    if (pacey) CoreR.string.metric_avg_pace else CoreR.string.metric_avg_speed,
+                ),
+                Format.paceOrSpeed(stats.avgSpeedMps, sport, units, labels),
+            )
+            Figure(
+                stringResource(CoreR.string.metric_elevation_gain),
+                Format.elevation(stats.elevationGainM, units, labels),
+            )
+            Figure(stringResource(CoreR.string.metric_avg_hr), Format.heartRate(stats.avgHrBpm, labels))
+            stats.avgPowerW?.let {
+                Figure(stringResource(CoreR.string.metric_avg_power), Format.power(it, labels))
+            }
         }
     }
 }
 
+/**
+ * A card that explains why the section it stands in place of is not there.
+ *
+ * Deliberately not `core:ui`'s `EmptyState`, which owns a whole screen and offers a way out of
+ * it. This one sits between two sections that *did* render, so it is the size of the thing it
+ * replaces and carries no action — there is nothing the athlete can do about a source that
+ * recorded no samples, and a button suggesting otherwise would be a lie.
+ */
 @Composable
-private fun EmptyState(title: String, body: String) {
+private fun InlineNote(title: String, body: String) {
     SectionCard(title = null) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(
@@ -461,6 +578,59 @@ private fun EmptyState(title: String, body: String) {
     }
 }
 
+/**
+ * The detail screen before its numbers arrive.
+ *
+ * Laid out as the screen it becomes — a headline, a grid of tiles, a map-sized block, a chart —
+ * so that nothing moves when the request answers. The alternative, a spinner in the middle of an
+ * empty screen, gives the athlete no idea whether this workout has a route on it until it either
+ * appears or does not.
+ */
+@Composable
+private fun ActivityDetailSkeleton(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.fillMaxSize().padding(Spacing.lg),
+        verticalArrangement = Arrangement.spacedBy(Spacing.lg),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(Spacing.xs)) {
+            SkeletonLine(widthFraction = 0.4f, height = 12.dp)
+            SkeletonLine(widthFraction = 0.7f, height = 28.dp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            SkeletonBox(
+                modifier = Modifier.weight(1f).height(SKELETON_TILE_HEIGHT),
+                shape = MaterialTheme.shapes.extraLarge,
+            )
+            SkeletonBox(
+                modifier = Modifier.weight(1f).height(SKELETON_TILE_HEIGHT),
+                shape = MaterialTheme.shapes.extraLarge,
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
+            SkeletonBox(
+                modifier = Modifier.weight(1f).height(SKELETON_TILE_HEIGHT),
+                shape = MaterialTheme.shapes.extraLarge,
+            )
+            SkeletonBox(
+                modifier = Modifier.weight(1f).height(SKELETON_TILE_HEIGHT),
+                shape = MaterialTheme.shapes.extraLarge,
+            )
+        }
+        SkeletonBox(
+            modifier = Modifier.fillMaxWidth().height(SKELETON_MAP_HEIGHT),
+            shape = MaterialTheme.shapes.extraLarge,
+        )
+        SkeletonBox(
+            modifier = Modifier.fillMaxWidth().height(SKELETON_CHART_HEIGHT),
+            shape = MaterialTheme.shapes.extraLarge,
+        )
+    }
+}
+
+private val SKELETON_TILE_HEIGHT = 84.dp
+private val SKELETON_MAP_HEIGHT = 220.dp
+private val SKELETON_CHART_HEIGHT = 180.dp
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AxisChips(axis: Axis, enabled: Boolean, onSelect: (Axis) -> Unit) {
@@ -468,12 +638,12 @@ private fun AxisChips(axis: Axis, enabled: Boolean, onSelect: (Axis) -> Unit) {
         FilterChip(
             selected = axis == Axis.TIME,
             onClick = { onSelect(Axis.TIME) },
-            label = { Text("Time") },
+            label = { Text(stringResource(R.string.activity_axis_time)) },
         )
         FilterChip(
             selected = axis == Axis.DISTANCE,
             onClick = { onSelect(Axis.DISTANCE) },
-            label = { Text("Distance") },
+            label = { Text(stringResource(R.string.activity_axis_distance)) },
             enabled = enabled,
         )
     }
@@ -499,19 +669,24 @@ private fun xAxisOf(telemetry: TelemetryChannels?, axis: Axis): DoubleArray? {
     return seconds
 }
 
-private fun xFormatFor(axis: Axis, units: UnitSystem): (Double) -> String {
-    if (axis == Axis.DISTANCE) return { value -> Format.distance(value, units) }
+private fun xFormatFor(axis: Axis, units: UnitSystem, labels: UnitLabels): (Double) -> String {
+    if (axis == Axis.DISTANCE) return { value -> Format.distance(value, units, labels) }
     return { value -> Format.duration(value) }
 }
 
 /** The units a channel reads in. Separate from the panel so the `when` returns a value, not a
  *  lambda — a `when` branch whose body is braces is a block, and the two are easy to confuse. */
-private fun formatterFor(key: String, sport: String, units: UnitSystem): (Double) -> String {
-    if (key == "elevation") return { value -> Format.elevation(value, units) }
-    if (key == "speed") return { value -> Format.paceOrSpeed(value, sport, units) }
-    if (key == "hr") return { value -> Format.heartRate(value) }
-    if (key == "cadence") return { value -> Format.cadence(value) }
-    return { value -> Format.power(value) }
+private fun formatterFor(
+    key: String,
+    sport: String,
+    units: UnitSystem,
+    labels: UnitLabels,
+): (Double) -> String {
+    if (key == "elevation") return { value -> Format.elevation(value, units, labels) }
+    if (key == "speed") return { value -> Format.paceOrSpeed(value, sport, units, labels) }
+    if (key == "hr") return { value -> Format.heartRate(value, labels) }
+    if (key == "cadence") return { value -> Format.cadence(value, labels) }
+    return { value -> Format.power(value, labels) }
 }
 
 /**
@@ -525,6 +700,9 @@ private fun panelsOf(
     activity: ActivityDetailDto,
     sport: String,
     units: UnitSystem,
+    channelNames: Map<String, String>,
+    paceName: String,
+    labels: UnitLabels,
 ): List<ChartPanel> {
     if (telemetry == null) return emptyList()
     val pacey = !Format.usesSpeed(sport)
@@ -533,15 +711,15 @@ private fun panelsOf(
         val values = telemetry.channel(key)?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
         ChartPanel(
             key = key,
-            label = if (key == "speed" && pacey) "Pace" else PANEL_LABELS.getValue(key),
+            label = if (key == "speed" && pacey) paceName else channelNames.getValue(key),
             values = values,
-            format = formatterFor(key, sport, units),
+            format = formatterFor(key, sport, units, labels),
             summary = when (key) {
-                "elevation" -> activity.elevationGainM?.let { "+${Format.elevation(it, units)}" }
-                "speed" -> Format.paceOrSpeed(activity.avgSpeedMps, sport, units)
+                "elevation" -> activity.elevationGainM?.let { "+${Format.elevation(it, units, labels)}" }
+                "speed" -> Format.paceOrSpeed(activity.avgSpeedMps, sport, units, labels)
                 "hr" -> activity.avgHrBpm?.let { "$it bpm" }
-                "cadence" -> activity.avgCadenceRpm?.let { Format.cadence(it) }
-                else -> activity.avgPowerW?.let { Format.power(it) }
+                "cadence" -> activity.avgCadenceRpm?.let { Format.cadence(it, labels) }
+                else -> activity.avgPowerW?.let { Format.power(it, labels) }
             },
             // Standing still is not a pace. Without this the axis of a ride with traffic lights
             // in it runs down to two hours per kilometre and the ride itself is a sliver.

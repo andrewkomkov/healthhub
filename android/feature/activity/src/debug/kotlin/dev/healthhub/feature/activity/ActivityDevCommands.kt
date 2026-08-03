@@ -7,6 +7,7 @@ import dagger.hilt.components.SingletonComponent
 import dagger.multibindings.IntoSet
 import dev.healthhub.core.devcontrol.DevCommand
 import dev.healthhub.core.model.UnitSystem
+import dev.healthhub.core.ui.Format
 import javax.inject.Inject
 
 /**
@@ -209,7 +210,11 @@ class RouteImportCommand @Inject constructor(
         RouteImportState.Absent -> "absent"
         RouteImportState.NotOnThisPhone -> "not_on_this_phone"
         RouteImportState.Unsupported -> "unsupported"
-        RouteImportState.Archived -> "archived"
+        // Two slugs, because they are two situations: the sync concluded this was another
+        // app's version of the same workout, or a person set it aside. Only the first is
+        // something a re-sync could ever have got wrong.
+        is RouteImportState.Archived ->
+            if (duplicateOf != null) "archived_duplicate" else "archived_by_hand"
         RouteImportState.Importing -> "importing"
         is RouteImportState.Imported -> "imported"
         is RouteImportState.Declined -> "declined"

@@ -13,9 +13,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.healthconnect.ExerciseRouteContract
 import dev.healthhub.core.model.RoutePoint
+import dev.healthhub.core.ui.SectionCard
+import dev.healthhub.core.ui.R as CoreR
 
 /**
  * What sits where the map would be, when there is no map.
@@ -53,7 +56,7 @@ internal fun RouteCard(
     // looking for a switch that would change nothing.
     if (fixes > 0) {
         Explain(
-            title = "Not enough of a track to draw",
+            title = stringResource(R.string.route_thin_title),
             body = if (fixes == 1) {
                 "This recording stored a single position and nothing after it, so there is no " +
                     "line to put on a map. Another app's copy of the same workout may have the " +
@@ -68,48 +71,44 @@ internal fun RouteCard(
 
     when (state) {
         RouteImportState.Hidden -> Explain(
-            title = "Route",
-            body = "This workout was recorded with GPS. Its track arrives with the telemetry, " +
-                "which is still loading.",
+            title = stringResource(R.string.route_hidden_title),
+            body = stringResource(R.string.route_hidden_body),
         )
 
         RouteImportState.Checking -> Explain(
-            title = "No route yet",
-            body = "Looking for a GPS track for this workout…",
+            title = stringResource(R.string.route_checking_title),
+            body = stringResource(R.string.route_checking_body),
         )
 
         RouteImportState.Absent -> Explain(
-            title = "This workout has no GPS track",
-            body = "The app that recorded it stored a summary and no positions — an indoor " +
-                "session, or a recorder with the GPS off. There is nothing to import, and no " +
-                "permission that would change that. Everything the sensors did record is below.",
+            title = stringResource(R.string.route_absent_title),
+            body = stringResource(R.string.route_absent_body),
         )
 
         RouteImportState.NotOnThisPhone -> Explain(
-            title = "No route on this phone",
-            body = "This workout was synced from another device, so its Health Connect " +
-                "recording is not here to import a track from. Open it on the phone that " +
-                "recorded it.",
+            title = stringResource(R.string.route_elsewhere_title),
+            body = stringResource(R.string.route_elsewhere_body),
         )
 
         RouteImportState.Unsupported -> Explain(
-            title = "No route",
-            body = "Health Connect is not available on this phone, so there is nowhere to " +
-                "import a track from.",
+            title = stringResource(R.string.route_unsupported_title),
+            body = stringResource(R.string.route_unsupported_body),
         )
 
-        RouteImportState.Archived -> Explain(
-            title = "No route",
-            body = "This recording is archived as a duplicate of another app's version of the " +
-                "same workout. Restore it first if you want its track — importing one " +
-                "re-uploads the workout, and that would quietly put it back in the feed.",
+        is RouteImportState.Archived -> Explain(
+            title = stringResource(R.string.route_archived_title),
+            body = stringResource(
+                if (state.duplicateOf != null) {
+                    R.string.route_archived_duplicate_body
+                } else {
+                    R.string.route_archived_manual_body
+                },
+            ),
         )
 
         is RouteImportState.Offered -> Explain(
-            title = "This workout has a GPS track",
-            body = "Health Connect keeps routes behind a separate confirmation, one workout at " +
-                "a time. Importing rebuilds this activity's map, distance and splits from the " +
-                "track.",
+            title = stringResource(R.string.route_offered_title),
+            body = stringResource(R.string.route_offered_body),
         ) {
             val ready = state.points
             Button(
@@ -123,13 +122,13 @@ internal fun RouteCard(
                     }
                 },
             ) {
-                Text("Import route")
+                Text(stringResource(R.string.route_import))
             }
         }
 
         RouteImportState.Importing -> Explain(
-            title = "Importing the route",
-            body = "Recomputing the map, distance and splits from the track, then uploading.",
+            title = stringResource(R.string.route_importing_title),
+            body = stringResource(R.string.route_importing_body),
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
@@ -138,27 +137,26 @@ internal fun RouteCard(
                 // Sized from the spacing scale rather than left at the component default,
                 // which is a 48 dp indicator beside a line of body text.
                 CircularProgressIndicator(Modifier.size(Spacing.xl))
-                Text("Working…", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.route_working), style = MaterialTheme.typography.bodySmall)
             }
         }
 
-        is RouteImportState.Imported -> Explain(title = "Route imported", body = state.message)
+        is RouteImportState.Imported -> Explain(title = stringResource(R.string.route_imported_title), body = state.message)
 
         is RouteImportState.Declined -> Explain(
-            title = "The route was not shared",
-            body = "Health Connect returned nothing, so the confirmation was dismissed or " +
-                "refused. The track is still there; asking again is one tap away.",
+            title = stringResource(R.string.route_declined_title),
+            body = stringResource(R.string.route_declined_body),
         ) {
-            Button(onClick = { launcher.launch(state.sessionId) }) { Text("Try again") }
+            Button(onClick = { launcher.launch(state.sessionId) }) { Text(stringResource(CoreR.string.action_try_again)) }
         }
 
         is RouteImportState.Failed -> Explain(
-            title = "The route could not be imported",
+            title = stringResource(R.string.route_failed_title),
             body = state.message,
         ) {
             val sessionId = state.sessionId
             if (sessionId != null) {
-                Button(onClick = { launcher.launch(sessionId) }) { Text("Try again") }
+                Button(onClick = { launcher.launch(sessionId) }) { Text(stringResource(CoreR.string.action_try_again)) }
             }
         }
     }
@@ -172,7 +170,7 @@ internal fun RouteCard(
  */
 @Composable
 internal fun RouteOutcome(message: String) {
-    Explain(title = "Route imported", body = message)
+    Explain(title = stringResource(R.string.route_imported_title), body = message)
 }
 
 /** Which session a returning consent result belongs to, or null if the screen moved on. */

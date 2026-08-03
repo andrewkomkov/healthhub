@@ -14,4 +14,51 @@
 <resources>
     <string name="hh_map_tiles_url" translatable="false"></string>
     <string name="hh_map_tiles_attribution" translatable="false"></string>
+
+    <string name="action_failed">That did not work. Try again.</string>
+    <string name="activity_actions">Actions for this workout</string>
+    <string name="activity_fallback_title">Activity</string>
+    <string name="activity_error_title">Could not open this activity</string>
+    <string name="activity_error_body">It may not have finished syncing yet.</string>
+    <string name="activity_no_samples_title">No per-second data for this workout</string>
+    <string name="activity_no_samples_body">The source recorded a summary but no samples, so there is nothing to plot. The figures above are what it did report.</string>
+    <string name="activity_axis_time">Time</string>
+    <string name="activity_axis_distance">Distance</string>
+    <string name="activity_preview">Preview resolution — loading full detail…</string>
+    <string name="activity_thinned">Showing 1 sample in %1$d — this recording has %2$d samples.</string>
+    <string name="activity_selection">Selection</string>
+    <string name="activity_selection_clear">Clear</string>
+    <string name="activity_selection_hint">Press and hold a chart, then drag, to see the numbers for just that stretch.</string>
+    <string name="channel_elevation">Elevation</string>
+    <string name="channel_speed">Speed</string>
+    <string name="channel_pace">Pace</string>
+    <string name="channel_hr">Heart rate</string>
+    <string name="channel_cadence">Cadence</string>
+    <string name="channel_power">Power</string>
+    <string name="route_hidden_title">Route</string>
+    <string name="route_hidden_body">This workout was recorded with GPS. Its track arrives with the telemetry, which is still loading.</string>
+    <string name="route_checking_title">No route yet</string>
+    <string name="route_checking_body">Looking for a GPS track for this workout…</string>
+    <string name="route_absent_title">This workout has no GPS track</string>
+    <string name="route_absent_body">The app that recorded it stored a summary and no positions — an indoor session, or a recorder with the GPS off. There is nothing to import, and no permission that would change that. Everything the sensors did record is below.</string>
+    <string name="route_elsewhere_title">No route on this phone</string>
+    <string name="route_elsewhere_body">This workout was synced from another device, so its Health Connect recording is not here to import a track from. Open it on the phone that recorded it.</string>
+    <string name="route_unsupported_title">No route</string>
+    <string name="route_unsupported_body">Health Connect is not available on this phone, so there is nowhere to import a track from.</string>
+    <string name="route_archived_title">No route</string>
+    <string name="route_archived_duplicate_body">This recording is archived as a duplicate of another app\'s version of the same workout. Restore it from the menu above if you want its track — importing one re-uploads the workout, and that would quietly put it back in the feed.</string>
+    <string name="route_archived_manual_body">You set this recording aside. Restore it from the menu above if you want its track — importing one re-uploads the workout, and that would put it back in the feed.</string>
+    <string name="route_offered_title">This workout has a GPS track</string>
+    <string name="route_offered_body">Health Connect keeps routes behind a separate confirmation, one workout at a time. Importing rebuilds this activity\'s map, distance and splits from the track.</string>
+    <string name="route_import">Import route</string>
+    <string name="route_importing_title">Importing the route</string>
+    <string name="route_importing_body">Recomputing the map, distance and splits from the track, then uploading.</string>
+    <string name="route_working">Working…</string>
+    <string name="route_imported_title">Route imported</string>
+    <string name="route_declined_title">The route was not shared</string>
+    <string name="route_declined_body">Health Connect returned nothing, so the confirmation was dismissed or there is nothing to ask for.</string>
+    <string name="route_failed_title">The route could not be imported</string>
+    <string name="route_thin_title">Not enough of a track to draw</string>
+    <string name="splits_title">Splits</string>
+    <string name="zones_title">Zones</string>
 </resources>

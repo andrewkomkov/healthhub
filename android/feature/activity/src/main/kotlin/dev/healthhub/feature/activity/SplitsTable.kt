@@ -18,11 +18,16 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.model.UnitSystem
 import dev.healthhub.core.network.SplitDto
+import dev.healthhub.core.ui.Format
+import dev.healthhub.core.ui.UnitLabels
+import dev.healthhub.core.ui.unitLabels
+import dev.healthhub.core.ui.SectionCard
 
 /**
  * The splits table, read verbatim from what the phone computed at ingest.
@@ -38,6 +43,7 @@ internal fun SplitsTable(
     units: UnitSystem,
     modifier: Modifier = Modifier,
 ) {
+    val labels = unitLabels()
     val wanted = if (units == UnitSystem.IMPERIAL) "mi" else "km"
     val rows = splits.filter { it.unit == wanted }
     if (rows.isEmpty()) return
@@ -45,7 +51,7 @@ internal fun SplitsTable(
     val fastest = rows.maxOf { it.avgSpeedMps ?: 0.0 }
     val fullSplit = if (wanted == "mi") Format.MILE_M else 1000.0
 
-    SectionCard(title = "Splits", modifier = modifier) {
+    SectionCard(title = stringResource(R.string.splits_title), modifier = modifier) {
         Row(modifier = Modifier.fillMaxWidth()) {
             HeaderCell(if (wanted == "mi") "Mile" else "Km", COLUMN_INDEX)
             HeaderCell("Time", COLUMN_TIME)
@@ -66,11 +72,11 @@ internal fun SplitsTable(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     val label = "${split.idx + 1}" +
-                        if (partial) " · ${Format.distance(split.distanceM, units)}" else ""
+                        if (partial) " · ${Format.distance(split.distanceM, units, labels)}" else ""
                     BodyCell(label, COLUMN_INDEX)
                     BodyCell(Format.duration(split.movingSeconds ?: split.elapsedSeconds), COLUMN_TIME)
-                    BodyCell(Format.paceOrSpeed(split.avgSpeedMps, sport, units), COLUMN_PACE)
-                    BodyCell(Format.elevation(split.elevationGainM, units), COLUMN_ELEVATION)
+                    BodyCell(Format.paceOrSpeed(split.avgSpeedMps, sport, units, labels), COLUMN_PACE)
+                    BodyCell(Format.elevation(split.elevationGainM, units, labels), COLUMN_ELEVATION)
                     BodyCell(split.avgHrBpm?.toString() ?: Format.EM_DASH, COLUMN_HR)
                 }
                 SpeedBar(share)
@@ -124,28 +130,4 @@ private fun RowScope.BodyCell(text: String, weight: Float) {
         modifier = Modifier.weight(weight),
         style = MaterialTheme.typography.bodyMedium,
     )
-}
-
-/** The card every section on this screen sits in, so radius and padding have one definition. */
-@Composable
-internal fun SectionCard(
-    title: String?,
-    modifier: Modifier = Modifier,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(Spacing.lg).fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-        ) {
-            if (title != null) Text(title, style = MaterialTheme.typography.titleMedium)
-            content()
-        }
-    }
 }

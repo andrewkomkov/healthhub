@@ -67,6 +67,7 @@ import dev.healthhub.core.designsystem.HealthHubType
 import dev.healthhub.core.designsystem.LocalChartChrome
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.designsystem.channelColor
+import dev.healthhub.core.ui.Format
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.withTimeoutOrNull

@@ -118,13 +118,26 @@ internal object TelemetryAnalysis {
         var movingSeconds: Double? = null
         val speed = channels.speed
         if (time != null && speed != null) {
+            // The same gap rule the ingest path applies, over the whole recording rather than
+            // over the selection — it is a question about the *source's* cadence, and a
+            // twenty-sample selection is not enough to answer it.
+            //
+            // This panel used to apply no cap at all, which was written down as a deliberate
+            // divergence from `Metrics.movingSeconds`. It was really the other half of one
+            // defect: on a walk Google Fit sampled every 77 seconds, the summary card above
+            // read 2:56 and this panel read 27:35 over exactly the same samples. Two numbers
+            // for one walk on one screen is what SC-008 exists to forbid, and neither of them
+            // was right.
+            val cap = Metrics.sampleGapCapSeconds(time)
             var moving = 0.0
             var sawSpeed = false
             for (i in lo + 1..hi) {
                 val v = speed.at(i)
                 if (v.isNaN()) continue
                 sawSpeed = true
-                if (v >= MOVING_SPEED_THRESHOLD_MPS) moving += (time.at(i) - time.at(i - 1)) / 1000.0
+                val dt = (time.at(i) - time.at(i - 1)) / 1000.0
+                if (dt <= 0 || dt > cap) continue
+                if (v >= MOVING_SPEED_THRESHOLD_MPS) moving += dt
             }
             // A channel that never crossed the threshold leaves moving time unknown, not zero —
             // storing 0 here is what once made real workouts read "0:00" in the feed.

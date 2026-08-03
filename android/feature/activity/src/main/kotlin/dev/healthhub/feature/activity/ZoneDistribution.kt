@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -20,6 +21,8 @@ import dev.healthhub.core.designsystem.GeneratedTokens
 import dev.healthhub.core.designsystem.LocalIsDark
 import dev.healthhub.core.designsystem.Spacing
 import dev.healthhub.core.network.ZoneDto
+import dev.healthhub.core.ui.Format
+import dev.healthhub.core.ui.SectionCard
 import kotlin.math.roundToInt
 
 /**
@@ -44,7 +47,7 @@ internal fun ZoneDistribution(
     val kinds = listOf("hr", "power").filter { kind -> zones.any { it.kind == kind } }
     if (kinds.isEmpty()) return
 
-    SectionCard(title = "Zones", modifier = modifier) {
+    SectionCard(title = stringResource(R.string.zones_title), modifier = modifier) {
         kinds.forEach { kind ->
             val rows = zones.filter { it.kind == kind }.sortedBy { it.zoneIndex }
             val total = rows.sumOf { it.seconds }

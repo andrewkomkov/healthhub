@@ -45,8 +45,15 @@ sealed interface RouteImportState {
 
     data object Unsupported : RouteImportState
 
-    /** Archived recordings are left alone: re-uploading one would put it back in the feed. */
-    data object Archived : RouteImportState
+    /**
+     * Archived recordings are left alone: re-uploading one would put it back in the feed.
+     *
+     * [duplicateOf] separates the two ways a recording gets here, and they are different
+     * sentences: the sync decided this was another app's version of the same workout, or the
+     * athlete set it aside by hand. Telling somebody their own decision was a duplicate verdict
+     * is the kind of small lie this screen exists not to tell. Null means it was theirs.
+     */
+    data class Archived(val duplicateOf: String?) : RouteImportState
 
     data object Importing : RouteImportState
 
@@ -80,7 +87,9 @@ class RouteImporter @Inject constructor(
      * route is not already on screen.
      */
     suspend fun inspect(activity: ActivityDetailDto): RouteImportState {
-        if (activity.visibility != "active") return RouteImportState.Archived
+        if (activity.visibility != "active") {
+            return RouteImportState.Archived(activity.duplicateOf)
+        }
         if (healthConnect.availability != HealthConnectSource.Availability.AVAILABLE) {
             return RouteImportState.Unsupported
         }
