@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { cumulativeDistance, haversineMetres, nearestIndex, rangeStats } from './analysis'
+import {
+  cumulativeDistance,
+  haversineMetres,
+  nearestIndex,
+  rangeStats,
+  sampleGapCapSeconds,
+} from './analysis'
 
 const f = (values: number[]) => Float64Array.from(values)
 
@@ -87,6 +93,26 @@ describe('rangeStats', () => {
     expect(stats.movingSeconds).toBeCloseTo(3, 6)
   })
 
+  it('keeps a sparse source\'s moving time instead of losing all of it', () => {
+    // The Kotlin twin of this test is `MetricsTest`, and the defect is the same one, found on
+    // a real Pixel: Google Fit samples a walk about once every 77 seconds, so under a flat
+    // 30-second gap cap every interval was a gap and a 46-minute walk stored 2:56 of movement.
+    // This file's range statistics applied no cap at all and reported 27:35 over exactly the
+    // same samples — two numbers for one walk on one screen, which is what SC-008 forbids.
+    const cadence = 77_000
+    const samples = 36
+    const time = f(Array.from({ length: samples }, (_, i) => i * cadence))
+    const speed = f(Array.from({ length: samples }, () => 1.4))
+
+    const stats = rangeStats(
+      { time, distance: null, speed, hr: null, power: null, cadence: null, elevation: null },
+      0,
+      samples - 1,
+    )
+
+    expect(stats.movingSeconds).toBeCloseTo(((samples - 1) * cadence) / 1000, 6)
+  })
+
   it('leaves moving time unknown when nothing ever recorded speed', () => {
     const stats = rangeStats({ ...channels, speed: null }, 0, 4)
 
@@ -123,5 +149,24 @@ describe('nearestIndex', () => {
     expect(nearestIndex(axis, 16)).toBe(2)
     expect(nearestIndex(axis, 1000)).toBe(4)
     expect(nearestIndex(axis, -5)).toBe(0)
+  })
+})
+
+describe('sampleGapCapSeconds', () => {
+  it('leaves a one hertz recording on exactly the threshold it always had', () => {
+    // The floor is what makes the cadence-relative rule safe over a history already synced:
+    // three times a one-second cadence is three seconds, so the cap stays at thirty.
+    expect(sampleGapCapSeconds(f(Array.from({ length: 120 }, (_, i) => i * 1000)))).toBe(30)
+  })
+
+  it('widens to the source\'s own cadence', () => {
+    const time = f(Array.from({ length: 40 }, (_, i) => i * 77_000))
+    expect(sampleGapCapSeconds(time)).toBeCloseTo(231, 6)
+  })
+
+  it('refuses to infer a cadence from too few intervals', () => {
+    // Three samples a second and then five minutes apart have a median interval of two and a
+    // half minutes. Calling that a cadence would turn the pause into movement.
+    expect(sampleGapCapSeconds(f([0, 1000, 301_000]))).toBe(30)
   })
 })

@@ -23,6 +23,54 @@ export const MOVING_SPEED_THRESHOLD_MPS = 0.5
 /** Barometers jitter. Mirrors `Metrics.ELEVATION_NOISE_THRESHOLD_M`. */
 const ELEVATION_NOISE_THRESHOLD_M = 1.0
 
+/**
+ * The floor under {@link sampleGapCapSeconds}. Mirrors `Metrics.MAX_SAMPLE_GAP_SECONDS`.
+ */
+const MAX_SAMPLE_GAP_SECONDS = 30
+
+/** How many of a source's own intervals make a gap. Mirrors `Metrics.GAP_MULTIPLE`. */
+const GAP_MULTIPLE = 3
+
+/**
+ * How many intervals it takes before a median is a cadence rather than an accident.
+ * Mirrors `Metrics.MIN_INTERVALS_FOR_CADENCE`.
+ */
+const MIN_INTERVALS_FOR_CADENCE = 10
+
+/**
+ * The longest interval that still counts as a *sample* rather than as a *gap*.
+ *
+ * The Kotlin twin is `Metrics.sampleGapCapSeconds`, and the reasoning lives there in full. The
+ * short version: a flat 30-second threshold is right at 1 Hz and wrong at anything else. Google
+ * Fit samples a walk about once every 77 seconds, so every interval of a real 46-minute walk
+ * exceeded it — the phone stored 2:56 of moving time while this file's range statistics, which
+ * applied no cap at all, reported 27:35 over the same samples. So the cap follows the source's
+ * own cadence, floored at the old value so that a dense recording is unchanged.
+ *
+ * The median rather than the mean: a ride with one coffee stop in it has a mean interval
+ * dragged upwards by the stop, which would then count the stop as movement.
+ */
+export function sampleGapCapSeconds(timeMs: ArrayLike<number>): number {
+  if (timeMs.length < 2) return MAX_SAMPLE_GAP_SECONDS
+
+  const intervals: number[] = []
+  for (let i = 1; i < timeMs.length; i++) {
+    const dt = (timeMs[i]! - timeMs[i - 1]!) / 1000
+    if (dt > 0) intervals.push(dt)
+  }
+  // Too few intervals to have a cadence. Three samples a second and then five minutes apart
+  // have a median of two and a half minutes, and calling that "how often this source writes"
+  // would turn the pause into movement.
+  if (intervals.length < MIN_INTERVALS_FOR_CADENCE) return MAX_SAMPLE_GAP_SECONDS
+
+  intervals.sort((a, b) => a - b)
+  const mid = intervals.length >> 1
+  const median =
+    intervals.length % 2 === 1 ? intervals[mid]! : (intervals[mid - 1]! + intervals[mid]!) / 2
+
+  return Math.max(MAX_SAMPLE_GAP_SECONDS, median * GAP_MULTIPLE)
+}
+
 export function haversineMetres(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = Math.PI / 180
   const dLat = (lat2 - lat1) * toRad
@@ -161,13 +209,20 @@ export function rangeStats(channels: Channels, from: number, to: number): RangeS
 
   let movingSeconds: number | null = null
   if (time && channels.speed) {
+    // The same gap rule the phone applies at ingest, over the whole recording rather than over
+    // the selection: it is a question about the source's cadence, and twenty samples are not
+    // enough to answer it. This panel used to apply no cap, which was recorded as a deliberate
+    // divergence and was really the other half of one defect — see `sampleGapCapSeconds`.
+    const cap = sampleGapCapSeconds(time)
     let moving = 0
     let sawSpeed = false
     for (let i = lo + 1; i <= hi; i++) {
       const v = channels.speed[i]!
       if (Number.isNaN(v)) continue
       sawSpeed = true
-      if (v >= MOVING_SPEED_THRESHOLD_MPS) moving += (time[i]! - time[i - 1]!) / 1000
+      const dt = (time[i]! - time[i - 1]!) / 1000
+      if (dt <= 0 || dt > cap) continue
+      if (v >= MOVING_SPEED_THRESHOLD_MPS) moving += dt
     }
     // A channel that never crossed the threshold leaves moving time unknown, not zero —
     // storing 0 here is what once made real workouts read "0:00" in the feed.

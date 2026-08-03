@@ -41,6 +41,103 @@ class MetricsTest {
     }
 
     @Test
+    fun `a sparse source keeps its moving time instead of losing all of it`() {
+        // The defect, from a real Pixel: Google Fit samples a walk about once every 77 seconds,
+        // so under the old flat 30-second cap *every* interval was a gap, every one was skipped,
+        // and a 46-minute walk was stored as 2:56 of movement. The detail screen's own range
+        // statistics, which applied no cap, said 27:35 over the same samples.
+        val cadence = 77_000.0
+        val samples = 36
+        val time = DoubleArray(samples) { it * cadence }
+        val speed = DoubleArray(samples) { 1.4 }
+
+        val moving = Metrics.movingSeconds(time, speed)
+        val elapsed = (samples - 1) * cadence / 1000.0
+        assertThat(moving).isEqualTo(elapsed)
+    }
+
+    @Test
+    fun `a sparse source's coffee stop is still a gap`() {
+        // The rule has to widen with the cadence without swallowing a real pause. At 77-second
+        // cadence the cap is about four minutes, so a nine-minute stop is still not movement.
+        val cadence = 77_000.0
+        val time = DoubleArray(20) { it * cadence }
+        time[15] = time[14] + 9 * 60_000.0
+        for (i in 16 until time.size) time[i] = time[15] + (i - 15) * cadence
+        val speed = DoubleArray(20) { 1.4 }
+
+        val moving = Metrics.movingSeconds(time, speed)
+        val everyInterval = (time.last() - time.first()) / 1000.0
+        assertThat(moving).isLessThan(everyInterval)
+        // Everything except the stop: eighteen ordinary intervals.
+        assertThat(moving).isEqualTo(18 * cadence / 1000.0)
+    }
+
+    @Test
+    fun `a one hertz recording keeps exactly the threshold it always had`() {
+        // The floor is what makes this change safe to ship over a synced history: three times a
+        // one-second cadence is three seconds, so the cap stays at 30 and every activity already
+        // stored from a dense source keeps the moving time it was stored with.
+        val time = DoubleArray(120) { it * 1000.0 }
+        assertThat(Metrics.sampleGapCapSeconds(time)).isEqualTo(Metrics.MAX_SAMPLE_GAP_SECONDS)
+    }
+
+    @Test
+    fun `too few intervals is not a cadence`() {
+        // Three samples one second and then five minutes apart have a median interval of two and
+        // a half minutes. Treating that as "how often this source writes" would turn the pause
+        // into movement, so below ten intervals the conservative floor stands.
+        val time = doubleArrayOf(0.0, 1000.0, 301_000.0)
+        assertThat(Metrics.sampleGapCapSeconds(time)).isEqualTo(Metrics.MAX_SAMPLE_GAP_SECONDS)
+    }
+
+    @Test
+    fun `average speed reconciles with the tiles beside it`() {
+        // The defect, read off a Pixel: a 1.43 km walk showing elapsed 22:59, moving 6:04 and
+        // an average pace of 18:06 /km — and 1.43 km at 18:06 /km is 25:53, longer than the
+        // elapsed time on the tile next to it. Three figures from three different places, one
+        // of them arithmetically impossible against the others.
+        val speed = Metrics.averageSpeed(
+            distanceM = 1430.0,
+            movingSeconds = 364.0,
+            elapsedSeconds = 1379.0,
+            channelMeanMps = 0.92,
+        )
+        assertThat(speed).isWithin(1e-9).of(1430.0 / 364.0)
+    }
+
+    @Test
+    fun `average speed falls back to elapsed when moving time is unknown`() {
+        // A source that recorded no usable speed channel has no moving time, and distance over
+        // elapsed is the honest reading rather than nothing at all.
+        val speed = Metrics.averageSpeed(
+            distanceM = 1430.0,
+            movingSeconds = null,
+            elapsedSeconds = 1379.0,
+        )
+        assertThat(speed).isWithin(1e-9).of(1430.0 / 1379.0)
+    }
+
+    @Test
+    fun `average speed keeps the channel mean only when there is no distance`() {
+        // A treadmill session with a speed trace and no distance has nothing else to offer.
+        // The channel mean is the misleading figure, but removing the number entirely is a
+        // worse answer than a soft one.
+        assertThat(
+            Metrics.averageSpeed(
+                distanceM = null,
+                movingSeconds = 600.0,
+                elapsedSeconds = 900.0,
+                channelMeanMps = 2.5,
+            ),
+        ).isEqualTo(2.5)
+
+        assertThat(
+            Metrics.averageSpeed(distanceM = null, movingSeconds = null, elapsedSeconds = 900.0),
+        ).isNull()
+    }
+
+    @Test
     fun `elevation gain ignores sub-metre jitter`() {
         val elevation = doubleArrayOf(100.0, 100.4, 100.2, 100.6, 100.3)
         val change = Metrics.elevationChange(elevation)
