@@ -25,6 +25,12 @@ jobs:
       - name: Generate design tokens
         run: npm run tokens
 
+      # The repository's own flat config, the same command a developer runs. MegaLinter no
+      # longer lints JavaScript: its bundled ESLint cannot resolve a flat config's imports,
+      # and two linters with two rule sets only produce contradictory advice.
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -33,6 +39,13 @@ jobs:
 
       - name: Build web
         run: npm --workspace web run build
+
+      # The only thing that opens the actual page: it boots the real Worker and the real Vite
+      # server, so it covers the seam the unit tests cannot reach.
+      - name: End-to-end
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
 
       # Catches a broken wrangler.jsonc without deploying anything.
       - name: Validate Worker deployment config

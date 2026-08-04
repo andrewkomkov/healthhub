@@ -91,12 +91,28 @@ FILTER_REGEX_EXCLUDE: >-
 JAVASCRIPT_DEFAULT_STYLE: prettier
 TYPESCRIPT_DEFAULT_STYLE: prettier
 
+# ESLint runs from `npm run lint` in the web workflow, against the repository's own flat
+# config, which is the command a developer runs locally. It does not also run here.
+#
+# MegaLinter bundles its own ESLint install, and a flat config uses native ESM resolution that
+# does not honour NODE_PATH — so `import js from '@eslint/js'` cannot resolve and the linter
+# dies before reading a file. The available fixes are to install the workspace inside the
+# MegaLinter container and point it at `node_modules/.bin/eslint`, which is a second full npm
+# install per run for a second opinion, or to let the repository lint its own JavaScript. One
+# rule set, in one place, run by one command: the same reasoning as everywhere else here.
+JAVASCRIPT_ES_FILTER_REGEX_EXCLUDE: "(.*)"
+TYPESCRIPT_ES_FILTER_REGEX_EXCLUDE: "(.*)"
+
 JSON_JSONLINT_FILTER_REGEX_EXCLUDE: "(tsconfig.*\\.json|\\.jsonc$)" # both allow comments
 JSON_PRETTIER_FILTER_REGEX_EXCLUDE: "(\\.jsonc$)"
 
 # ktlint is the formatter, detekt the analyser. Both read the Kotlin sources directly; the
 # Android sources use the official Kotlin style declared in gradle.properties.
-KOTLIN_KTLINT_ARGUMENTS: "--code-style=intellij_idea"
+# `--code-style` was removed from ktlint: it answers "Parameter '--code-style' is no longer
+# valid. The code style should be defined as '.editorconfig' property 'ktlint_code_style='",
+# writes no SARIF, and MegaLinter then fails parsing an output that does not exist. The style
+# now lives in `.editorconfig` beside the indent rules it belongs with.
+KOTLIN_KTLINT_ARGUMENTS: ""
 KOTLIN_DETEKT_ARGUMENTS: "--build-upon-default-config"
 
 MARKDOWN_MARKDOWNLINT_CONFIG_FILE: .markdownlint.json
