@@ -46,6 +46,17 @@ ENABLE:
   - YAML
 
 DISABLE_LINTERS:
+  # ESLint runs from `npm run lint` in the web workflow, against the repository's own flat
+  # config — the command a developer runs locally. It does not also run here.
+  #
+  # MegaLinter bundles its own ESLint install, and a flat config uses native ESM resolution
+  # that does not honour NODE_PATH, so `import js from '@eslint/js'` cannot resolve and the
+  # linter dies before it reads a file. The alternatives are a second full npm install inside
+  # the container for a second opinion, or letting the repository lint its own JavaScript.
+  # One rule set, in one place, run by one command.
+  - JAVASCRIPT_ES
+  - TYPESCRIPT_ES
+  - TSX_ESLINT
   # Prettier and ESLint both format; ESLint owns correctness, Prettier owns layout, and
   # running standard on top of them only produces contradictory advice.
   - JAVASCRIPT_STANDARD
@@ -100,8 +111,7 @@ TYPESCRIPT_DEFAULT_STYLE: prettier
 # MegaLinter container and point it at `node_modules/.bin/eslint`, which is a second full npm
 # install per run for a second opinion, or to let the repository lint its own JavaScript. One
 # rule set, in one place, run by one command: the same reasoning as everywhere else here.
-JAVASCRIPT_ES_FILTER_REGEX_EXCLUDE: "(.*)"
-TYPESCRIPT_ES_FILTER_REGEX_EXCLUDE: "(.*)"
+
 
 JSON_JSONLINT_FILTER_REGEX_EXCLUDE: "(tsconfig.*\\.json|\\.jsonc$)" # both allow comments
 JSON_PRETTIER_FILTER_REGEX_EXCLUDE: "(\\.jsonc$)"

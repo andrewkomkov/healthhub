@@ -55,12 +55,15 @@ jobs:
           else
             version="${GITHUB_REF_NAME#v}"
           fi
-          echo "name=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          # Monotonic by construction. A version code that ever goes backwards is an APK the
-          # phone refuses to install over the one already on it, with a message that blames the
-          # phone rather than the build.
-          echo "code=${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+          # One redirect rather than three (shellcheck SC2129). The version code is monotonic
+          # by construction: one that ever goes backwards is an APK the phone refuses to install
+          # over the one already on it, with a message that blames the phone rather than the
+          # build.
+          {
+            echo "name=$version"
+            echo "tag=v$version"
+            echo "code=${{ github.run_number }}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Unit tests
         working-directory: android

@@ -43,7 +43,9 @@ jobs:
 
       - name: Smoke check
         run: |
-          for i in $(seq 1 10); do
+          # `_` rather than `i`: the counter is never read, and shellcheck's SC2034 is
+          # right that a named-but-unused variable is usually a mistake.
+          for _ in $(seq 1 10); do
             code=$(curl -s -o /dev/null -w '%{http_code}' https://healthhub.andrew-komkov.workers.dev/api/health)
             if [ "$code" = "200" ]; then echo "healthy"; exit 0; fi
             sleep 5
