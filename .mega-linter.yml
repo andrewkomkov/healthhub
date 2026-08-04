@@ -115,6 +115,13 @@ JSON_PRETTIER_FILTER_REGEX_EXCLUDE: "(\\.jsonc$)"
 KOTLIN_KTLINT_ARGUMENTS: ""
 KOTLIN_DETEKT_ARGUMENTS: "--build-upon-default-config"
 
+# zizmor resolves every `uses:` clause through the GitHub API to audit the action behind it,
+# and answers ACTION_ZIZMOR_ERROR_GITHUB_API_UNREACHABLE when it cannot — which fails the job
+# for a reason that has nothing to do with the workflows it is reading. Offline keeps the
+# audits that read the files themselves and drops the ones that need a network, which is the
+# property a linter should have in CI anyway: the same input, the same answer, every time.
+ACTION_ZIZMOR_ARGUMENTS: "--offline"
+
 MARKDOWN_MARKDOWNLINT_CONFIG_FILE: .markdownlint.json
 MARKDOWN_MARKDOWN_LINK_CHECK_DISABLE_ERRORS: true # external links rot; that is not our defect
 

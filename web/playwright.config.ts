@@ -18,6 +18,9 @@ import { defineConfig, devices } from '@playwright/test'
  */
 export default defineConfig({
   testDir: './e2e',
+  // The local D1 is created empty by `wrangler dev`, so the schema has to be applied before
+  // anything opens a page — see the file for what the failure looks like without it.
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   // One worker: the tests share a local D1 file, and parallel sign-ups would race the auth
   // rate limiter — ten per IP per fifteen minutes, and every one of them comes from 127.0.0.1.
